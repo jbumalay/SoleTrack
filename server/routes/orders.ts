@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { getPool } from "../db";
 import { getAuthenticatedUser, requireAuth, type AuthedRequest } from "../auth";
-import { asyncHandler, mapDbError, parseId, type Row } from "../utils";
+import { asyncHandler, isDupEntry, mapDbError, parseId, type Row } from "../utils";
 
 export function registerOrderRoutes(app: Express): void {
   app.get(
@@ -140,6 +140,28 @@ export function registerOrderRoutes(app: Express): void {
           res.status(404).json({ status: "error", message: "Product not found" });
           return;
         }
+
+        const [dupRows] = (await pool.execute(
+          "SELECT 1 FROM reviews WHERE product_id = ? AND user_id = ? LIMIT 1",
+          [productId, user.user_id]
+        )) as unknown as [Row[], unknown];
+        if (dupRows.length > 0) {
+          res.status(400).json({ status: "error", message: "You have already reviewed this product" });
+          return;
+        }
+
+        const [purchaseRows] = (await pool.execute(
+          `SELECT 1 FROM orders o
+           JOIN order_items oi ON o.order_id = oi.order_id
+           WHERE o.user_id = ? AND oi.product_id = ? AND o.status = 'delivered'
+           LIMIT 1`,
+          [user.user_id, productId]
+        )) as unknown as [Row[], unknown];
+        if (purchaseRows.length === 0) {
+          res.status(400).json({ status: "error", message: "Only delivered purchases can be reviewed" });
+          return;
+        }
+
         const customer_name =
           `${user.first_name || ""} ${user.last_name || ""}`.trim() || user.username || "Verified Artisan Patron";
 
@@ -151,6 +173,10 @@ export function registerOrderRoutes(app: Express): void {
         res.json({ status: "success", message: "Review submitted" });
       } catch (error: unknown) {
         console.error("Review submit failed");
+        if (isDupEntry(error)) {
+          res.status(400).json({ status: "error", message: "You have already reviewed this product" });
+          return;
+        }
         const mapped = mapDbError(error, "Failed to submit review");
         res.status(mapped.http >= 500 ? 500 : mapped.http).json({
           status: "error",

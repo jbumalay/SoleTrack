@@ -42,7 +42,7 @@ All paths verified against `server/` route registrations (`server/routes/*.ts`, 
 | GET | `/api/orders/details?id=` | owner, or seller with item in order, or admin; includes `items[]` + `history[]` |
 | POST | `/api/orders/simulate?id=` | advances pending→confirmed→shipped→delivered; customer: own only; seller: own-item only; admin: any |
 | PUT | `/api/orders/cancel?id=` | owner only; allowed from `pending`/`confirmed` |
-| POST | `/api/reviews` | `{product_id, rating 1–5, comment?}` |
+| POST | `/api/reviews` | `{product_id, rating 1–5, comment?}`; requires `delivered` order containing product → 400 otherwise; one per `(product_id,user_id)` → 400 on duplicate (`UNIQUE` backstop; legacy `user_id NULL` rows exempt) |
 | GET | `/api/payment/history?order_id=` | owner or admin; returns `order_status_history` rows |
 
 ## Seller (`isSeller`: role=seller AND status=active)
