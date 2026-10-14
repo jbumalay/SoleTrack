@@ -124,6 +124,27 @@ export async function initDb(): Promise<void> {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
   `);
 
+  // A3: one review per user per product. MySQL UNIQUE allows multiple NULLs,
+  // so legacy seed rows (user_id NULL) are unaffected. Idempotent: dedupe dirty
+  // dev DBs (keep earliest review_id), then add the key only if missing.
+  await pool.query(`
+    DELETE r1 FROM reviews r1
+    JOIN reviews r2
+      ON r1.product_id = r2.product_id
+      AND r1.user_id = r2.user_id
+      AND r1.user_id IS NOT NULL
+      AND r1.review_id > r2.review_id
+  `);
+  const [uqRows] = (await pool.query(
+    `SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS
+     WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'reviews' AND INDEX_NAME = 'uq_reviews_product_user'
+     LIMIT 1`,
+    [dbName]
+  )) as unknown as [Array<Record<string, unknown>>, unknown];
+  if (uqRows.length === 0) {
+    await pool.query(`ALTER TABLE reviews ADD UNIQUE KEY uq_reviews_product_user (product_id, user_id)`);
+  }
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS cart_items (
       cart_item_id INT AUTO_INCREMENT PRIMARY KEY,
