@@ -1,7 +1,8 @@
 import { Link, useLocation, useNavigate } from "react-router";
-import { ShoppingCart, Search, Menu, User, LogOut, X, Footprints } from "lucide-react";
+import { ShoppingCart, Search, Menu, User, LogOut, X, Footprints, Heart } from "lucide-react";
 import React, { useState } from "react";
 import { useAuth } from "../context/AuthContext";
+import { readWishlist } from "../utils/wishlist";
 
 interface HeaderProps {
   cartItemCount?: number;
@@ -14,6 +15,7 @@ export function Header({ cartItemCount = 0 }: HeaderProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout, isAdmin, isSeller } = useAuth();
+  const wishlistCount = readWishlist().length;
 
   const isActive = (path: string) => location.pathname === path;
 
@@ -105,6 +107,21 @@ export function Header({ cartItemCount = 0 }: HeaderProps) {
 
             {!isAdmin && !isSeller && (
               <Link
+                to="/wishlist"
+                className="relative p-2.5 hover:bg-muted rounded-xl transition-all group"
+                title="Wishlist"
+              >
+                <Heart className="w-5 h-5 group-active:scale-95 transition-transform" />
+                {wishlistCount > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-black rounded-full min-w-[18px] h-[18px] flex items-center justify-center border-2 border-white shadow-lg shadow-red-500/20">
+                    {wishlistCount}
+                  </span>
+                )}
+              </Link>
+            )}
+
+            {!isAdmin && !isSeller && (
+              <Link
                 to="/cart"
                 className="relative p-2.5 hover:bg-muted rounded-xl transition-all group"
               >
@@ -170,6 +187,16 @@ export function Header({ cartItemCount = 0 }: HeaderProps) {
                   onClick={() => setMobileMenuOpen(false)}
                 >
                   Login
+                </Link>
+              )}
+              {!isAdmin && !isSeller && (
+                <Link
+                  to="/wishlist"
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-muted transition-colors"
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  <Heart className="w-5 h-5" />
+                  <span>Wishlist {wishlistCount > 0 && `(${wishlistCount})`}</span>
                 </Link>
               )}
               {!isAdmin && !isSeller && (

@@ -10,6 +10,7 @@ import { Stores } from "./pages/Stores";
 import { StoreDetail } from "./pages/StoreDetail";
 import { Cart } from "./pages/Cart";
 import { Checkout } from "./pages/Checkout";
+import { Wishlist } from "./pages/Wishlist";
 import { About } from "./pages/About";
 import { Contact } from "./pages/Contact";
 import { Login } from "./pages/Login";
@@ -50,6 +51,7 @@ export default function App() {
               <Route path="store/:id" element={<StoreDetail />} />
               <Route path="about" element={<About />} />
               <Route path="contact" element={<Contact />} />
+              <Route path="wishlist" element={<Wishlist />} />
               <Route path="login" element={<RedirectIfAuthed><Login /></RedirectIfAuthed>} />
               <Route path="register" element={<RedirectIfAuthed><Register /></RedirectIfAuthed>} />
               {/* Customer-protected */}

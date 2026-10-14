@@ -5,18 +5,9 @@ import { apiService } from "@/services/api";
 import { motion, AnimatePresence } from "motion/react";
 import { useAuth } from "@/context/AuthContext";
 import { LOW_STOCK_THRESHOLD } from "@/constants";
+import { readWishlist, toggleWishlistId } from "@/utils/wishlist";
 import type { ProductInventory } from "@/types";
 import { toast } from "sonner";
-
-function readWishlist(): number[] {
-  try {
-    const raw = localStorage.getItem("soletrack_wishlist") || "[]";
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.map(Number).filter((n) => Number.isFinite(n)) : [];
-  } catch {
-    return [];
-  }
-}
 
 function formatReviewDate(value: unknown): string {
   if (!value) return "Unknown date";
@@ -48,20 +39,12 @@ export function ProductDetail() {
 
   const toggleWishlist = useCallback(() => {
     if (!id || !Number.isFinite(Number(id))) return;
-    const wishlist = readWishlist();
     const pid = Number(id);
     try {
-      if (wishlist.includes(pid)) {
-        const updated = wishlist.filter((x) => x !== pid);
-        localStorage.setItem("soletrack_wishlist", JSON.stringify(updated));
-        setIsWishlisted(false);
-        toast.success("Removed from wishlist");
-      } else {
-        wishlist.push(pid);
-        localStorage.setItem("soletrack_wishlist", JSON.stringify(wishlist));
-        setIsWishlisted(true);
-        toast.success("Added to wishlist");
-      }
+      const wasWishlisted = readWishlist().includes(pid);
+      toggleWishlistId(pid);
+      setIsWishlisted(!wasWishlisted);
+      toast.success(wasWishlisted ? "Removed from wishlist" : "Added to wishlist");
     } catch {
       toast.error("Could not update wishlist");
     }
