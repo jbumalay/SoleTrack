@@ -51,9 +51,12 @@ export function registerOrderRoutes(app: Express): void {
       }
       const [orderRows] = (await pool.execute(
         `
-        SELECT order_id, user_id, status as order_status, payment_status, total_amount, shipping_fee, shipping_address, created_at as order_date
-        FROM orders
-        WHERE order_id = ?
+        SELECT o.order_id, o.user_id, o.status as order_status, o.payment_status,
+               o.total_amount, o.shipping_fee, o.discount_amount, pc.code as promo_code,
+               o.shipping_address, o.created_at as order_date
+        FROM orders o
+        LEFT JOIN promo_codes pc ON o.promo_code_id = pc.promo_code_id
+        WHERE o.order_id = ?
       `,
         [orderId]
       )) as unknown as [Array<Row & { user_id: number; items?: Row[]; history?: Row[] }>, unknown];
