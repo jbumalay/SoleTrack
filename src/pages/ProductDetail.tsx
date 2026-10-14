@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { useAuth } from "@/context/AuthContext";
 import { LOW_STOCK_THRESHOLD } from "@/constants";
 import { readWishlist, toggleWishlistId } from "@/utils/wishlist";
+import { addGuestCartLine } from "@/utils/guestCart";
 import type { ProductInventory } from "@/types";
 import { toast } from "sonner";
 
@@ -18,7 +19,7 @@ function formatReviewDate(value: unknown): string {
 export function ProductDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { refreshCart, user, isAdmin, isSeller } = useAuth();
+  const { refreshCart, refreshCartCount, user, isAdmin, isSeller } = useAuth();
   const isShopRole = isAdmin || isSeller;
   const [product, setProduct] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -105,6 +106,23 @@ export function ProductDetail() {
     const productId = product?.product_id ?? product?.id;
     if (productId === undefined || productId === null || !Number.isFinite(Number(productId))) {
       toast.error("This product cannot be added to cart right now.");
+      return;
+    }
+
+    // Logged-out shoppers build a local cart that merges on login.
+    if (!user) {
+      addGuestCartLine({
+        product_id: Number(productId),
+        quantity,
+        size_id: selectedSize,
+        name: product?.product_name,
+        price: Number(product?.base_price ?? product?.price) || undefined,
+        image_url: product?.image_url || product?.image || undefined,
+        stock_quantity: Number.isFinite(availableStock) ? availableStock : undefined,
+      });
+      refreshCartCount();
+      toast.success("Saved to cart — log in to check out");
+      navigate("/cart");
       return;
     }
 

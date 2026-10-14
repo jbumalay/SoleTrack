@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { apiService } from "../services/api";
 import { toast } from "sonner";
+import { readGuestCart, writeGuestCart, clearGuestCart, guestCartCount, GuestCartLine } from "../utils/guestCart";
 
 interface User {
   user_id: number;
@@ -24,6 +25,7 @@ interface AuthContextType {
   isCustomer: boolean;
   cartCount: number;
   refreshCart: () => Promise<void>;
+  refreshCartCount: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -40,6 +42,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (user && user.role === 'customer') {
       refreshCart();
+    } else if (!user) {
+      setCartCount(guestCartCount());
     } else {
       setCartCount(0);
     }
@@ -54,6 +58,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     } catch (error) {
       console.error("Failed to refresh cart count:", error);
+    }
+  };
+
+  /** Recount handled by either the server cart (customers) or the guest cart (logged out). */
+  const refreshCartCount = () => {
+    if (user && user.role === 'customer') {
+      void refreshCart();
+    } else if (!user) {
+      setCartCount(guestCartCount());
+    }
+  };
+
+  /** Push localStorage guest-cart lines into the server cart, then clear them. */
+  const mergeGuestCart = async () => {
+    const lines = readGuestCart();
+    if (lines.length === 0) return;
+    const failed: GuestCartLine[] = [];
+    let merged = 0;
+    for (const line of lines) {
+      try {
+        await apiService.addToCart(line.product_id, line.quantity, line.size_id);
+        merged += line.quantity;
+      } catch {
+        failed.push(line);
+      }
+    }
+    if (failed.length > 0) writeGuestCart(failed);
+    else clearGuestCart();
+    await refreshCart();
+    if (merged > 0) {
+      toast.success(`Saved cart merged — ${merged} item(s) added to your heritage cart`);
     }
   };
 
@@ -85,6 +120,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         localStorage.setItem("soletrack_token", token);
         setUser(userData);
         toast.success("Welcome back, " + (userData.username || userData.first_name));
+        if (userData.role === 'customer') await mergeGuestCart();
         return userData;
       }
       return null;
@@ -102,6 +138,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         localStorage.setItem("soletrack_token", token);
         setUser(data);
         toast.success("Account created!");
+        if (data.role === 'customer') await mergeGuestCart();
         return data;
       }
       return null;
@@ -117,6 +154,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       localStorage.removeItem("soletrack_token");
       setUser(null);
+      setCartCount(guestCartCount());
       toast.info("Logged out successfully");
     }
   };
@@ -136,7 +174,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isSeller, 
       isCustomer,
       cartCount,
-      refreshCart
+      refreshCart,
+      refreshCartCount
     }}>
       {children}
     </AuthContext.Provider>

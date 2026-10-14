@@ -6,15 +6,17 @@ import { apiService } from "@/services/api";
 import { CartItem } from "@/types";
 import { useAuth } from "@/context/AuthContext";
 import { SHIPPING_THRESHOLD, SHIPPING_FEE } from "@/constants";
+import { readGuestCart, updateGuestCartLine, removeGuestCartLine } from "@/utils/guestCart";
 import { toast } from "sonner";
 
 export function Cart() {
   const navigate = useNavigate();
-  const { refreshCart, isAdmin, isSeller, loading: authLoading } = useAuth();
+  const { refreshCart, refreshCartCount, user, isAdmin, isSeller, loading: authLoading } = useAuth();
+  const isGuest = !user;
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState(false);
-  const [updatingItems, setUpdatingItems] = useState<Record<number, boolean>>({});
+  const [updatingItems, setUpdatingItems] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (authLoading) return;
@@ -24,6 +26,10 @@ export function Cart() {
 
   const fetchCart = async () => {
     try {
+      if (isGuest) {
+        setCartItems(readGuestCart() as unknown as CartItem[]);
+        return;
+      }
       const response = await apiService.getCart();
       if (response.status === "success") {
         setCartItems((response.data.items as CartItem[] | undefined) ?? []);
@@ -39,17 +45,23 @@ export function Cart() {
   };
 
   useEffect(() => {
-    fetchCart();
-  }, []);
+    if (!authLoading) fetchCart();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authLoading, user]);
 
   const updateQuantity = async (id: number, newQuantity: number) => {
     const quantity = Math.floor(Number(newQuantity));
     if (isNaN(quantity) || quantity < 1) return;
     setUpdatingItems(prev => ({ ...prev, [id]: true }));
     try {
-      await apiService.updateCartItem(id, quantity);
-      await fetchCart();
-      await refreshCart();
+      if (isGuest) {
+        setCartItems(updateGuestCartLine(String(id), quantity) as unknown as CartItem[]);
+        refreshCartCount();
+      } else {
+        await apiService.updateCartItem(id, quantity);
+        await fetchCart();
+        await refreshCart();
+      }
     } catch (error: unknown) {
       toast.error(error instanceof Error ? error.message : "Failed to update quantity");
       console.error("Failed to update quantity:", error);
@@ -61,12 +73,17 @@ export function Cart() {
   const removeItem = async (id: number) => {
     setUpdatingItems(prev => ({ ...prev, [id]: true }));
     try {
-      await apiService.removeCartItem(id);
-      await fetchCart();
-      await refreshCart();
+      if (isGuest) {
+        setCartItems(removeGuestCartLine(String(id)) as unknown as CartItem[]);
+        refreshCartCount();
+      } else {
+        await apiService.removeCartItem(id);
+        await fetchCart();
+        await refreshCart();
+      }
     } catch (error: unknown) {
       toast.error(error instanceof Error ? error.message : "Failed to remove item");
-      console.error("Failed to remove item:", error);
+      console.error("Failed to remove cart item:", error);
     } finally {
       setUpdatingItems(prev => ({ ...prev, [id]: false }));
     }
@@ -130,6 +147,20 @@ export function Cart() {
            </div>
            <p className="text-gray-400 font-bold text-sm hidden md:block italic">{cartItems.length} Unique items selected</p>
         </div>
+
+        {isGuest && (
+          <div className="mb-10 bg-primary/5 border border-primary/10 rounded-3xl p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <p className="text-xs font-bold text-gray-600 leading-relaxed">
+              You're browsing as a guest. Your cart is saved on this device and merges into your account when you log in.
+            </p>
+            <Link
+              to="/login?redirect=%2Fcheckout"
+              className="shrink-0 inline-flex items-center justify-center bg-gray-900 text-white px-8 py-4 rounded-2xl font-black uppercase tracking-widest text-[10px] hover:bg-primary transition-all shadow-xl shadow-gray-200"
+            >
+              Log in to check out
+            </Link>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-12 xl:gap-16">
           <div className="lg:col-span-2 space-y-4">
@@ -243,10 +274,10 @@ export function Cart() {
               </div>
 
               <button
-                onClick={() => navigate("/checkout")}
+                onClick={() => (isGuest ? navigate("/login?redirect=%2Fcheckout") : navigate("/checkout"))}
                 className="w-full bg-primary text-white py-6 rounded-[1.5rem] font-black uppercase tracking-[0.2em] text-xs hover:bg-primary/90 transition-all shadow-xl shadow-primary/30 flex items-center justify-center group active:scale-95"
               >
-                Proceed to Checkout
+                {isGuest ? "Log in to Checkout" : "Proceed to Checkout"}
                 <ArrowRight className="ml-3 w-4 h-4 group-hover:translate-x-1 transition-transform" />
               </button>
               
