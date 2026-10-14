@@ -6,6 +6,7 @@ import { asyncHandler, EMAIL_RE, mapDbError, parseId, type Row } from "../utils"
 
 const ALLOWED_USER_ROLES = new Set(["customer", "seller", "admin"]);
 const ALLOWED_USER_STATUSES = new Set(["active", "pending_approval", "suspended", "inactive"]);
+const ALLOWED_PAYMENT_STATUSES = ["paid", "refunded"] as const;
 
 export function registerAdminRoutes(app: Express): void {
   app.get(
@@ -542,6 +543,64 @@ export function registerAdminRoutes(app: Express): void {
         res.json({ status: "success", message: "Size deleted" });
       } catch {
         res.status(400).json({ status: "error", message: "Failed to delete size" });
+      }
+    })
+  );
+
+  app.put(
+    "/api/admin/orders/payment",
+    isAdmin,
+    asyncHandler(async (req, res) => {
+      const { order_id, payment_status } = req.body ?? {};
+      const orderId = parseId(order_id);
+      if (orderId === null) {
+        res.status(400).json({ status: "error", message: "Invalid ID" });
+        return;
+      }
+
+      if (!ALLOWED_PAYMENT_STATUSES.includes(String(payment_status) as (typeof ALLOWED_PAYMENT_STATUSES)[number])) {
+        res.status(400).json({ status: "error", message: "Invalid payment status" });
+        return;
+      }
+      const next = String(payment_status);
+
+      const pool = getPool();
+      const conn = await pool.getConnection();
+      try {
+        await conn.beginTransaction();
+        const [orderRows] = (await conn.execute(
+          "SELECT payment_status FROM orders WHERE order_id = ? FOR UPDATE",
+          [orderId]
+        )) as unknown as [Array<{ payment_status: string }>, unknown];
+        const order = orderRows[0];
+
+        if (!order) {
+          await conn.rollback();
+          res.status(404).json({ status: "error", message: "Order not found" });
+          return;
+        }
+
+        if (order.payment_status === next) {
+          await conn.rollback();
+          res.json({ status: "success", message: `Order already marked as ${next}` });
+          return;
+        }
+
+        // Admins are intentionally unscoped: they may mark any order.
+        await conn.execute("UPDATE orders SET payment_status = ? WHERE order_id = ?", [next, orderId]);
+        await conn.execute("INSERT INTO order_status_history (order_id, status) VALUES (?, ?)", [orderId, next]);
+        await conn.commit();
+        res.json({ status: "success", message: `Order payment updated to ${next}` });
+      } catch {
+        try {
+          await conn.rollback();
+        } catch {
+          // ignore
+        }
+        console.error("Admin order payment update failed");
+        res.status(500).json({ status: "error", message: "Failed to update order payment" });
+      } finally {
+        conn.release();
       }
     })
   );

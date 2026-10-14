@@ -58,6 +58,7 @@ All paths verified against `server/` route registrations (`server/routes/*.ts`, 
 | GET | `/api/seller/reviews?product_id=` (required) | ownership-checked review list |
 | GET | `/api/seller/orders` | distinct orders with own products (+ own items each) |
 | PUT | `/api/seller/orders/status` | `{order_id, status ∈ pending/confirmed/shipped/delivered/cancelled}`; blocks delivered/cancelled; requires own item |
+| PUT | `/api/seller/orders/payment` | `{order_id, payment_status ∈ paid/refunded}`; requires own item; 403 otherwise; idempotent re-mark; appends `order_status_history` |
 | GET | `/api/seller/profile` | user fields + `profile` row |
 | PUT | `/api/seller/profile` | `{brand_name?, description?, logo_url?, banner_url?, location?, contact_email?, phone?}` (upsert) |
 
@@ -76,6 +77,7 @@ All paths verified against `server/` route registrations (`server/routes/*.ts`, 
 | PUT/DELETE | `/api/admin/categories/:id` | update / delete (400 if products use it) |
 | GET/POST | `/api/admin/sizes` | list (numeric sort) / `{size_value}` |
 | DELETE | `/api/admin/sizes/:id` | delete (400 if inventory uses it; no update route) |
+| PUT | `/api/admin/orders/payment` | `{order_id, payment_status ∈ paid/refunded}`; admin-only, any order; idempotent re-mark; appends `order_status_history` |
 
 Count: ~35 `/api/*` route registrations (54 `app.*` matches include static/PWA fallbacks).
 No pagination anywhere; list endpoints return full sets.
