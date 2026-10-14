@@ -87,6 +87,20 @@ export const apiService = {
     return this.request("/auth/me");
   },
 
+  async updateMyProfile(data: { first_name?: string | null; last_name?: string | null; brand_name?: string | null }): Promise<ApiResponse<any>> {
+    return this.request("/auth/me", {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  },
+
+  async changePassword(data: { current_password: string; new_password: string }): Promise<ApiResponse<any>> {
+    return this.request("/auth/password", {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  },
+
   /**
    * Product & Category methods
    */

@@ -144,6 +144,89 @@ export function registerAuthRoutes(app: Express): void {
     })
   );
 
+  app.put(
+    "/api/auth/me",
+    asyncHandler(async (req, res) => {
+      const user = await getAuthenticatedUser(req);
+      if (!user) {
+        res.status(401).json({ status: "error", message: "Not logged in" });
+        return;
+      }
+      const { first_name, last_name, brand_name } = req.body ?? {};
+      // undefined = leave unchanged; null/"" = clear; over-length = 400.
+      const normalize = (value: unknown, max: number): string | null | undefined => {
+        if (value === undefined) return undefined;
+        if (value === null || value === "") return null;
+        if (typeof value !== "string" || value.length > max) return "INVALID";
+        return value;
+      };
+      const first = normalize(first_name, 50);
+      const last = normalize(last_name, 50);
+      const brand = normalize(brand_name, 255);
+      if (first === "INVALID" || last === "INVALID" || brand === "INVALID") {
+        res.status(400).json({ status: "error", message: "Profile fields are too long" });
+        return;
+      }
+      try {
+        const pool = getPool();
+        await pool.execute(
+          "UPDATE users SET first_name = ?, last_name = ?, brand_name = ? WHERE user_id = ?",
+          [
+            first === undefined ? user.first_name : first,
+            last === undefined ? user.last_name : last,
+            brand === undefined ? user.brand_name : brand,
+            user.user_id,
+          ]
+        );
+        const [rows] = (await pool.execute("SELECT * FROM users WHERE user_id = ?", [
+          user.user_id,
+        ])) as unknown as [Array<Record<string, unknown>>, unknown];
+        const updated = rows[0];
+        if (!updated) {
+          res.status(404).json({ status: "error", message: "User not found" });
+          return;
+        }
+        const { password_hash: _omitted, ...userInfo } = updated;
+        void _omitted;
+        res.json({ status: "success", data: userInfo });
+      } catch (error: unknown) {
+        const mapped = mapDbError(error, "Profile update failed");
+        res.status(mapped.http).json({ status: "error", message: mapped.message });
+      }
+    })
+  );
+
+  app.put(
+    "/api/auth/password",
+    asyncHandler(async (req, res) => {
+      const user = await getAuthenticatedUser(req);
+      if (!user) {
+        res.status(401).json({ status: "error", message: "Not logged in" });
+        return;
+      }
+      const { current_password, new_password } = req.body ?? {};
+      if (typeof new_password !== "string" || new_password.length < 8) {
+        res.status(400).json({ status: "error", message: "New password must be at least 8 characters" });
+        return;
+      }
+      if (!(await bcrypt.compare(String(current_password ?? ""), String(user.password_hash ?? "")))) {
+        res.status(400).json({ status: "error", message: "Current password is incorrect" });
+        return;
+      }
+      try {
+        const hash = await bcrypt.hash(new_password, 10);
+        await getPool().execute("UPDATE users SET password_hash = ? WHERE user_id = ?", [
+          hash,
+          user.user_id,
+        ]);
+        res.json({ status: "success", message: "Password updated" });
+      } catch (error: unknown) {
+        const mapped = mapDbError(error, "Password update failed");
+        res.status(mapped.http).json({ status: "error", message: mapped.message });
+      }
+    })
+  );
+
   app.post(
     "/api/auth/logout",
     asyncHandler(async (req, res) => {

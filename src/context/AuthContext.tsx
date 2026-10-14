@@ -26,6 +26,7 @@ interface AuthContextType {
   cartCount: number;
   refreshCart: () => Promise<void>;
   refreshCartCount: () => void;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -112,6 +113,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  /** Re-fetch the current user (after profile edits) so the header reflects changes. */
+  const refreshUser = async () => {
+    const token = localStorage.getItem("soletrack_token");
+    if (!token) {
+      setUser(null);
+      return;
+    }
+    try {
+      const response = await apiService.getCurrentUser();
+      if (response.status === "success") {
+        setUser(response.data);
+      }
+    } catch {
+      setUser(null);
+    }
+  };
+
   const login = async (credentials: any): Promise<User | null> => {
     try {
       const response = await apiService.login(credentials);
@@ -175,7 +193,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isCustomer,
       cartCount,
       refreshCart,
-      refreshCartCount
+      refreshCartCount,
+      refreshUser
     }}>
       {children}
     </AuthContext.Provider>

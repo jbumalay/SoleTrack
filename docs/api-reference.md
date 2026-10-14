@@ -22,6 +22,8 @@ All paths verified against `server/` route registrations (`server/routes/*.ts`, 
 | POST | `/api/auth/login` | `{email, password}` | bcrypt verify → `{...userInfo (no hash), token}`; 401 on failure |
 | POST | `/api/auth/register` | `{email, password (≥8), role?, first_name?, last_name?, brand_name?}` | `role` allowlisted (`customer`/`seller`; `admin` → 400); seller → `pending_approval`; auto-login token; missing/short password → 400 |
 | GET | `/api/auth/me` | — (Bearer) | `{...userInfo}` or 401 |
+| PUT | `/api/auth/me` | `{first_name?, last_name?, brand_name?}` | self-service profile edit; `undefined` = unchanged, `null`/`""` = clear, over-length → 400; returns updated user (no hash) |
+| PUT | `/api/auth/password` | `{current_password, new_password (≥8)}` | bcrypt compare + rehash; wrong current → 400; current session stays valid |
 | POST | `/api/auth/logout` | — (Bearer, optional) | deletes session row; always 200 |
 
 ## Cart & checkout (auth)

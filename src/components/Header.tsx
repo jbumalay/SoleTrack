@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from "react-router";
-import { ShoppingCart, Search, Menu, User, LogOut, X, Footprints, Heart } from "lucide-react";
+import { ShoppingCart, Search, Menu, User, LogOut, X, Footprints, Heart, UserCog } from "lucide-react";
 import React, { useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { readWishlist } from "../utils/wishlist";
@@ -88,6 +88,13 @@ export function Header({ cartItemCount = 0 }: HeaderProps) {
                   className="px-4 py-2 rounded-lg hover:bg-muted transition-colors text-sm font-medium"
                 >
                   {isAdmin ? "Admin" : isSeller ? "Seller Portal" : "My Dashboard"}
+                </Link>
+                <Link
+                  to="/account"
+                  title="Account settings"
+                  className="p-2 hover:bg-muted rounded-lg transition-colors"
+                >
+                  <UserCog className="w-5 h-5" />
                 </Link>
                 <button
                   onClick={handleLogout}

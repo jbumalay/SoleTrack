@@ -17,6 +17,8 @@ import { Login } from "./pages/Login";
 import { Register } from "./pages/Register";
 import { CustomerDashboard } from "./pages/Dashboards";
 import { OrderTracking } from "./pages/OrderTracking";
+import { Account } from "./pages/Account";
+import { Invoice } from "./pages/Invoice";
 import { NotFound } from "./pages/NotFound";
 import { Toaster } from "sonner";
 
@@ -63,6 +65,8 @@ export default function App() {
               {/* Any authed user (backend enforces order ownership: buyer, selling seller, or admin) */}
               <Route element={<ProtectedRoute />}>
                 <Route path="orders" element={<CustomerDashboard />} />
+                <Route path="account" element={<Account />} />
+                <Route path="invoice/:id" element={<Invoice />} />
                 <Route path="order-tracking/:id" element={<OrderTracking />} />
               </Route>
               <Route path="*" element={<NotFound />} />
