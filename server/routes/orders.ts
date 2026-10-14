@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { getPool } from "../db";
 import { getAuthenticatedUser, requireAuth, type AuthedRequest } from "../auth";
-import { asyncHandler, mapDbError, parseId, type Row } from "../utils";
+import { asyncHandler, isDupEntry, mapDbError, parseId, type Row } from "../utils";
 
 export function registerOrderRoutes(app: Express): void {
   app.get(
@@ -51,9 +51,12 @@ export function registerOrderRoutes(app: Express): void {
       }
       const [orderRows] = (await pool.execute(
         `
-        SELECT order_id, user_id, status as order_status, payment_status, total_amount, shipping_fee, shipping_address, created_at as order_date
-        FROM orders
-        WHERE order_id = ?
+        SELECT o.order_id, o.user_id, o.status as order_status, o.payment_status,
+               o.total_amount, o.shipping_fee, o.discount_amount, pc.code as promo_code,
+               o.shipping_address, o.created_at as order_date
+        FROM orders o
+        LEFT JOIN promo_codes pc ON o.promo_code_id = pc.promo_code_id
+        WHERE o.order_id = ?
       `,
         [orderId]
       )) as unknown as [Array<Row & { user_id: number; items?: Row[]; history?: Row[] }>, unknown];
@@ -109,6 +112,10 @@ export function registerOrderRoutes(app: Express): void {
         res.status(401).json({ status: "error", message: "Login required" });
         return;
       }
+      if (user.status !== "active") {
+        res.status(403).json({ status: "error", message: "Account inactive" });
+        return;
+      }
 
       const { product_id, rating, comment } = req.body ?? {};
       if (product_id === undefined || product_id === null || rating === undefined || rating === null) {
@@ -140,6 +147,28 @@ export function registerOrderRoutes(app: Express): void {
           res.status(404).json({ status: "error", message: "Product not found" });
           return;
         }
+
+        const [dupRows] = (await pool.execute(
+          "SELECT 1 FROM reviews WHERE product_id = ? AND user_id = ? LIMIT 1",
+          [productId, user.user_id]
+        )) as unknown as [Row[], unknown];
+        if (dupRows.length > 0) {
+          res.status(400).json({ status: "error", message: "You have already reviewed this product" });
+          return;
+        }
+
+        const [purchaseRows] = (await pool.execute(
+          `SELECT 1 FROM orders o
+           JOIN order_items oi ON o.order_id = oi.order_id
+           WHERE o.user_id = ? AND oi.product_id = ? AND o.status = 'delivered'
+           LIMIT 1`,
+          [user.user_id, productId]
+        )) as unknown as [Row[], unknown];
+        if (purchaseRows.length === 0) {
+          res.status(400).json({ status: "error", message: "Only delivered purchases can be reviewed" });
+          return;
+        }
+
         const customer_name =
           `${user.first_name || ""} ${user.last_name || ""}`.trim() || user.username || "Verified Artisan Patron";
 
@@ -151,6 +180,10 @@ export function registerOrderRoutes(app: Express): void {
         res.json({ status: "success", message: "Review submitted" });
       } catch (error: unknown) {
         console.error("Review submit failed");
+        if (isDupEntry(error)) {
+          res.status(400).json({ status: "error", message: "You have already reviewed this product" });
+          return;
+        }
         const mapped = mapDbError(error, "Failed to submit review");
         res.status(mapped.http >= 500 ? 500 : mapped.http).json({
           status: "error",
@@ -281,6 +314,90 @@ export function registerOrderRoutes(app: Express): void {
         res.status(401).json({ status: "error", message: "Login required" });
         return;
       }
+      if (user.status !== "active") {
+        res.status(403).json({ status: "error", message: "Account inactive" });
+        return;
+      }
+
+      const orderId = parseId(req.query.id);
+      if (orderId === null) {
+        res.status(400).json({ status: "error", message: "Invalid ID" });
+        return;
+      }
+
+      const pool = getPool();
+      const conn = await pool.getConnection();
+      try {
+        await conn.beginTransaction();
+        const [orderRows] = (await conn.execute(
+          "SELECT status, payment_status FROM orders WHERE order_id = ? AND user_id = ? FOR UPDATE",
+          [orderId, user.user_id]
+        )) as unknown as [Array<{ status: string; payment_status: string }>, unknown];
+        const order = orderRows[0];
+        if (!order) {
+          await conn.rollback();
+          res.status(404).json({ status: "error", message: "Order not found" });
+          return;
+        }
+
+        if (["shipped", "delivered", "cancelled", "requested", "approved"].includes(order.status)) {
+          await conn.rollback();
+          res
+            .status(400)
+            .json({ status: "error", message: "Cannot cancel order that is shipped, delivered, cancelled, or in return" });
+          return;
+        }
+
+        const [lines] = (await conn.execute("SELECT product_id, size_id, quantity FROM order_items WHERE order_id = ?", [
+          orderId,
+        ])) as unknown as [Array<{ product_id: number; size_id: number | null; quantity: number }>, unknown];
+
+        for (const line of lines) {
+          await conn.execute(
+            `UPDATE inventory SET stock_quantity = stock_quantity + ?
+             WHERE product_id = ? AND (size_id = ? OR (size_id IS NULL AND ? IS NULL)) AND deleted_at IS NULL`,
+            [line.quantity, line.product_id, line.size_id, line.size_id]
+          );
+        }
+
+        await conn.execute("UPDATE orders SET status = 'cancelled' WHERE order_id = ? AND user_id = ?", [
+          orderId,
+          user.user_id,
+        ]);
+        await conn.execute("INSERT INTO order_status_history (order_id, status) VALUES (?, 'cancelled')", [orderId]);
+        if (order.payment_status === "paid") {
+          await conn.execute("UPDATE orders SET payment_status = 'refunded' WHERE order_id = ?", [orderId]);
+          await conn.execute("INSERT INTO order_status_history (order_id, status) VALUES (?, 'refunded')", [orderId]);
+        }
+
+        await conn.commit();
+        res.json({ status: "success", message: "Order cancelled" });
+      } catch {
+        try {
+          await conn.rollback();
+        } catch {
+          // ignore
+        }
+        console.error("Order cancel failed");
+        res.status(500).json({ status: "error", message: "Failed to cancel order" });
+      } finally {
+        conn.release();
+      }
+    })
+  );
+
+  app.post(
+    "/api/orders/return",
+    asyncHandler(async (req, res) => {
+      const user = await getAuthenticatedUser(req);
+      if (!user) {
+        res.status(401).json({ status: "error", message: "Login required" });
+        return;
+      }
+      if (user.status !== "active") {
+        res.status(403).json({ status: "error", message: "Account inactive" });
+        return;
+      }
 
       const orderId = parseId(req.query.id);
       if (orderId === null) {
@@ -303,30 +420,28 @@ export function registerOrderRoutes(app: Express): void {
           return;
         }
 
-        if (["shipped", "delivered", "cancelled"].includes(order.status)) {
+        if (order.status !== "delivered") {
           await conn.rollback();
-          res
-            .status(400)
-            .json({ status: "error", message: "Cannot cancel order that is shipped, delivered, or already cancelled" });
+          res.status(400).json({ status: "error", message: "Only delivered orders can be returned" });
           return;
         }
 
-        await conn.execute("UPDATE orders SET status = 'cancelled' WHERE order_id = ? AND user_id = ?", [
+        await conn.execute("UPDATE orders SET status = 'requested' WHERE order_id = ? AND user_id = ?", [
           orderId,
           user.user_id,
         ]);
-        await conn.execute("INSERT INTO order_status_history (order_id, status) VALUES (?, 'cancelled')", [orderId]);
+        await conn.execute("INSERT INTO order_status_history (order_id, status) VALUES (?, 'requested')", [orderId]);
 
         await conn.commit();
-        res.json({ status: "success", message: "Order cancelled" });
+        res.json({ status: "success", message: "Return requested" });
       } catch {
         try {
           await conn.rollback();
         } catch {
           // ignore
         }
-        console.error("Order cancel failed");
-        res.status(500).json({ status: "error", message: "Failed to cancel order" });
+        console.error("Order return request failed");
+        res.status(500).json({ status: "error", message: "Failed to request return" });
       } finally {
         conn.release();
       }

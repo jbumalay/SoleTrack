@@ -46,3 +46,6 @@ desktop.ini
 
 # Local-only dev planning docs (never commit)
 dev-docs/
+
+# Local-only agent context (never commit)
+AGENTS.md

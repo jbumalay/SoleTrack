@@ -200,7 +200,6 @@ export function ProductDetail() {
   const productSizes: ProductInventory[] = Array.isArray(product.inventory) ? product.inventory : [];
   const selectedInventory = productSizes.find(i => i.size_id === selectedSize);
   const availableStock = selectedInventory ? Number(selectedInventory.stock_quantity) : Number(product.total_stock || 0);
-  void numericId;
 
   const stockStatus = (availableStock <= 0)
     ? { label: "Out of Stock", color: "text-red-600", bgColor: "bg-red-50", borderColor: "border-red-100" }

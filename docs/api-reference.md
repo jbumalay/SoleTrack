@@ -9,10 +9,10 @@ All paths verified against `server/` route registrations (`server/routes/*.ts`, 
 | Method | Path | Query / body | Notes |
 |---|---|---|---|
 | GET | `/api/health` | — | `{status, message}` liveness |
-| GET | `/api/products` | `?id=` single with `reviews[]`,`inventory[]`; else `?category=&limit=&seller_id=` list with stock/rating aggregates | `limit` validated/clamped (max 100) + inlined; `limit=abc` → 400 |
+| GET | `/api/products` | `?id=` single with `reviews[]`,`inventory[]`; else list with stock/rating aggregates: legacy `?category=&limit=&seller_id=` → bare array; catalog mode `?search=&sort=newest\|price_asc\|price_desc\|rating&page=&limit=` (default `page=1,limit=12`, max 100) → `{items[],page,total_pages,total_items}` | `limit` validated/clamped (max 100) + inlined; `limit=abc` → 400; `sort`/`page` invalid → 400; `search` matches name/description/brand (`LIKE %..%`); `limit` alone keeps bare array for back-compat |
 | GET | `/api/categories` | — | all rows |
 | GET | `/api/sizes` | — | ordered by `size_id` |
-| GET | `/api/stores` | — | active sellers + `product_count` |
+| GET | `/api/stores` | legacy (no params) → bare array; paged `?search=&page=&limit=` (defaults `page=1,limit=12`) → `{items[],page,total_pages,total_items}`; always `ORDER BY brand_name ASC` | `search` matches brand/username/description/location; invalid `page`/`limit` → 400 |
 | GET | `/api/stores/:id` | path id | profile + active products; 404 if not seller |
 
 ## Auth
@@ -32,17 +32,18 @@ All paths verified against `server/` route registrations (`server/routes/*.ts`, 
 | POST | `/api/cart/add` | `{product_id, quantity, size_id?}` → upsert |
 | PUT | `/api/cart/update?id=` | `{quantity}` |
 | DELETE | `/api/cart/remove?id=` | — |
-| POST | `/api/checkout` | `{shipping_address, payment_method}` → `{order_id, subtotal, shipping, total}`; transactional; free shipping over ₱500 else ₱50 |
+| POST | `/api/checkout` | `{shipping_address, payment_method, promo_code?}` → `{order_id, subtotal, discount, promo_code, shipping, total, freeShippingThreshold, standardShippingFee}`; transactional; shipping free over ₱500 else ₱50 evaluated on discounted subtotal; `WELCOME10` seeded (10% off) | unknown/inactive/expired/over-limit/under-minimum promo → 400; usage increments once per order in the same transaction |
 
 ## Orders / reviews / payments (auth, owner-scoped)
 
 | Method | Path | Shape / rule |
 |---|---|---|
 | GET | `/api/orders/my` | own orders, each with ≤3 preview items |
-| GET | `/api/orders/details?id=` | owner, or seller with item in order, or admin; includes `items[]` + `history[]` |
+| GET | `/api/orders/details?id=` | owner, or seller with item in order, or admin; includes `items[]` + `history[]` + `discount_amount`/`promo_code` |
 | POST | `/api/orders/simulate?id=` | advances pending→confirmed→shipped→delivered; customer: own only; seller: own-item only; admin: any |
-| PUT | `/api/orders/cancel?id=` | owner only; allowed from `pending`/`confirmed` |
-| POST | `/api/reviews` | `{product_id, rating 1–5, comment?}` |
+| PUT | `/api/orders/cancel?id=` | owner only (active accounts); allowed from `pending`/`confirmed`; restocks each line into `inventory` in the same transaction + `cancelled` history row (+ `refunded` row when the order was `paid`); double-cancel → 400 without double-restock; `requested`/`approved` orders cannot cancel |
+| POST | `/api/orders/return?id=` | owner only; allowed from `delivered` → sets `requested` + history row; non-delivered → 400 |
+| POST | `/api/reviews` | `{product_id, rating 1–5, comment?}`; requires `delivered` order containing product → 400 otherwise; one per `(product_id,user_id)` → 400 on duplicate (`UNIQUE` backstop; legacy `user_id NULL` rows exempt) |
 | GET | `/api/payment/history?order_id=` | owner or admin; returns `order_status_history` rows |
 
 ## Seller (`isSeller`: role=seller AND status=active)
@@ -57,7 +58,9 @@ All paths verified against `server/` route registrations (`server/routes/*.ts`, 
 | GET | `/api/seller/reports/sales?days=` (default 7) | `{metrics{total_revenue,total_orders,aov,total_customers,products_sold,pending_orders_count}, trend[], categoryBreakdown[], topSelling[10]}` |
 | GET | `/api/seller/reviews?product_id=` (required) | ownership-checked review list |
 | GET | `/api/seller/orders` | distinct orders with own products (+ own items each) |
-| PUT | `/api/seller/orders/status` | `{order_id, status ∈ pending/confirmed/shipped/delivered/cancelled}`; blocks delivered/cancelled; requires own item |
+| PUT | `/api/seller/orders/status` | `{order_id, status ∈ pending/confirmed/shipped/delivered/cancelled}`; enforced `pending→confirmed/cancelled`, `confirmed→shipped/cancelled`, `shipped→delivered`; seller-cancel restocks each line + refunds when `paid`; requires own item (403 otherwise, checked before transition errors) |
+| PUT | `/api/seller/orders/payment` | `{order_id, payment_status ∈ paid/refunded}`; requires own item; 403 otherwise; idempotent re-mark; appends `order_status_history` |
+| PUT | `/api/seller/orders/return` | `{order_id}`; approves a `requested` return → `approved` + restocks each line in the same transaction (+ `refunded` payment + history row only when the order was `paid`); non-requested → 400; other sellers' orders → 403 (checked before status errors) |
 | GET | `/api/seller/profile` | user fields + `profile` row |
 | PUT | `/api/seller/profile` | `{brand_name?, description?, logo_url?, banner_url?, location?, contact_email?, phone?}` (upsert) |
 
@@ -76,6 +79,12 @@ All paths verified against `server/` route registrations (`server/routes/*.ts`, 
 | PUT/DELETE | `/api/admin/categories/:id` | update / delete (400 if products use it) |
 | GET/POST | `/api/admin/sizes` | list (numeric sort) / `{size_value}` |
 | DELETE | `/api/admin/sizes/:id` | delete (400 if inventory uses it; no update route) |
+| PUT | `/api/admin/orders/payment` | `{order_id, payment_status ∈ paid/refunded}`; admin-only, any order; idempotent re-mark; appends `order_status_history` |
+| GET | `/api/admin/orders?search=&status=&page=&limit=` | paginated `{items[],page,total_pages,total_items}` (defaults `page=1,limit=12`, max 100); `search` matches order id/email/name, `status` exact; admin-only, seller/customer → 403 |
+| GET | `/api/admin/orders/:id` | order-details shape (`items[]` + `history[]`, incl. `discount_amount`/`promo_code`) + customer `email`; admin-only |
+| GET/POST | `/api/admin/promo-codes` | list / `{code (3–50 A-Z0-9_-, stored uppercase), discount_type ∈ percent\|fixed, discount_value (>0; percent ≤100), min_subtotal? (≥0, default 0), expires_at? (NULL = never), usage_limit? (NULL = unlimited), is_active?}`; duplicate → 409 |
+| PUT/DELETE | `/api/admin/promo-codes/:id` | update (same validation; `expires_at: null`/`usage_limit: null` clears; `used_count` server-managed) / hard delete (past orders keep `discount_amount`) |
 
-Count: ~35 `/api/*` route registrations (54 `app.*` matches include static/PWA fallbacks).
-No pagination anywhere; list endpoints return full sets.
+Count: 56 `/api/*` route registrations (6 public + 4 auth + 5 cart + 7 orders + 13 seller + 21 admin).
+Paginated: `GET /api/products` (paged only when `search`/`sort`/`page` sent; `limit`-alone stays a bare array), `GET /api/stores` (paged when `search`/`page`/`limit` sent),
+`GET /api/admin/orders`; all other list endpoints return full sets.

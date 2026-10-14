@@ -32,8 +32,8 @@ npm install                   # installs deps + verifies package-lock.json
 npm run dev                   # tsx server.ts → bootstraps DB, seeds data, serves on :3000
 ```
 
-Open http://localhost:3000. First run creates the database, all 12 tables, and
-seed data (users, categories, sizes, products, inventory, reviews, orders).
+Open http://localhost:3000. First run creates the database, all 13 tables, and
+seed data (users, categories, sizes, products, inventory, reviews, orders, promo codes).
 
 ```powershell
 npm run build    # vite build + esbuild server bundle → dist/
@@ -73,7 +73,7 @@ grants access.
 server.ts            # Thin bootstrap (initDb + seed + createApp + listen)
 server/
   config.ts          # PORT/DB_* env + business constants
-  db.ts / seed.ts    # pool + DDL (12 tables) / seed data
+  db.ts / seed.ts    # pool + DDL (13 tables) / seed data
   auth.ts            # getAuthenticatedUser + requireAuth/isSeller/isAdmin
   app.ts             # Express factory (routes + Vite/static + error handler)
   routes/            # public, auth, cart, orders, seller, admin
@@ -112,5 +112,5 @@ Docs index: [`docs/architecture.md`](docs/architecture.md) ·
 - **`npm start` fails on non-Windows** — fixed: plain `node dist/server.cjs`
   (old `set NODE_ENV=production&&` was Windows-only; server reads `NODE_ENV` itself).
 - **Lockfile** — `package-lock.json` is committed; `npm ci` for reproducible installs.
-- **No git repo / no LICENSE** — intentional manual steps (see below);
-  do not assume a license — owner must choose one.
+- **No LICENSE** — owner must choose one (MIT recommended for a portfolio
+  project); do not assume a license.

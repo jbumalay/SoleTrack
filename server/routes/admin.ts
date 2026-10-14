@@ -2,10 +2,48 @@ import type { Express } from "express";
 import bcrypt from "bcryptjs";
 import { getPool } from "../db";
 import { isAdmin, type AuthedRequest } from "../auth";
-import { asyncHandler, EMAIL_RE, mapDbError, parseId, type Row } from "../utils";
+import { asyncHandler, EMAIL_RE, mapDbError, parseId, parseListLimit, parsePage, type Row } from "../utils";
 
 const ALLOWED_USER_ROLES = new Set(["customer", "seller", "admin"]);
 const ALLOWED_USER_STATUSES = new Set(["active", "pending_approval", "suspended", "inactive"]);
+const ALLOWED_PAYMENT_STATUSES = ["paid", "refunded"] as const;
+const ALLOWED_ORDER_STATUSES = new Set([
+  "pending",
+  "confirmed",
+  "shipped",
+  "delivered",
+  "cancelled",
+  "requested",
+  "approved",
+]);
+const DEFAULT_ADMIN_ORDERS_LIMIT = 12;
+const ALLOWED_DISCOUNT_TYPES = new Set(["percent", "fixed"]);
+const PROMO_CODE_RE = /^[A-Z0-9_-]{3,50}$/;
+
+function normalizePromoCode(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const code = raw.trim().toUpperCase();
+  return PROMO_CODE_RE.test(code) ? code : null;
+}
+
+function parsePromoActive(raw: unknown): number | null {
+  if (raw === undefined || raw === null || raw === "") return null;
+  if (typeof raw === "boolean") return raw ? 1 : 0;
+  if (typeof raw === "number" && (raw === 0 || raw === 1)) return raw;
+  if (typeof raw === "string") {
+    const s = raw.trim().toLowerCase();
+    if (s === "true" || s === "1") return 1;
+    if (s === "false" || s === "0") return 0;
+  }
+  return null;
+}
+
+function parsePromoExpiry(raw: unknown): { ok: boolean; value: Date | null } {
+  if (raw === undefined || raw === null || raw === "") return { ok: true, value: null };
+  const d = raw instanceof Date ? raw : new Date(String(raw));
+  if (Number.isNaN(d.getTime())) return { ok: false, value: null };
+  return { ok: true, value: d };
+}
 
 export function registerAdminRoutes(app: Express): void {
   app.get(
@@ -542,6 +580,427 @@ export function registerAdminRoutes(app: Express): void {
         res.json({ status: "success", message: "Size deleted" });
       } catch {
         res.status(400).json({ status: "error", message: "Failed to delete size" });
+      }
+    })
+  );
+
+  // Admin Orders View
+  app.get(
+    "/api/admin/orders",
+    isAdmin,
+    asyncHandler(async (req, res) => {
+      const { search, status, page, limit } = req.query;
+
+      let safePage: number | undefined;
+      if (page !== undefined && page !== "") {
+        safePage = parsePage(page);
+        if (safePage === undefined) {
+          res.status(400).json({ status: "error", message: "Invalid page" });
+          return;
+        }
+      }
+      let safeLimit: number | undefined;
+      if (limit !== undefined && limit !== "") {
+        safeLimit = parseListLimit(limit);
+        if (safeLimit === undefined) {
+          res.status(400).json({ status: "error", message: "Invalid limit" });
+          return;
+        }
+      }
+      const effectivePage = safePage ?? 1;
+      const effectiveLimit = safeLimit ?? DEFAULT_ADMIN_ORDERS_LIMIT;
+
+      const searchStr = search === undefined || search === null ? "" : String(search).trim();
+      const statusStr = status === undefined || status === null ? "" : String(status).trim();
+      if (statusStr !== "" && !ALLOWED_ORDER_STATUSES.has(statusStr)) {
+        res.status(400).json({ status: "error", message: "Invalid status" });
+        return;
+      }
+
+      let where = `WHERE 1 = 1`;
+      const params: Array<string | number> = [];
+      if (statusStr !== "") {
+        where += ` AND o.status = ?`;
+        params.push(statusStr);
+      }
+      if (searchStr !== "") {
+        if (/^\d+$/.test(searchStr)) {
+          where += ` AND (o.order_id = ? OR u.email LIKE ? OR u.first_name LIKE ? OR u.last_name LIKE ?)`;
+          params.push(Number.parseInt(searchStr, 10), `%${searchStr}%`, `%${searchStr}%`, `%${searchStr}%`);
+        } else {
+          where += ` AND (u.email LIKE ? OR u.first_name LIKE ? OR u.last_name LIKE ?)`;
+          const like = `%${searchStr}%`;
+          params.push(like, like, like);
+        }
+      }
+
+      const from = `FROM orders o JOIN users u ON o.user_id = u.user_id`;
+      const pool = getPool();
+      const [countRows] = (await pool.execute(`SELECT COUNT(*) as count ${from} ${where}`, params)) as unknown as [
+        [{ count: number }],
+        unknown,
+      ];
+      const totalItems = Number(countRows[0]?.count ?? 0) || 0;
+      const totalPages = totalItems === 0 ? 0 : Math.ceil(totalItems / effectiveLimit);
+      const offset = (effectivePage - 1) * effectiveLimit;
+
+      const [rows] = (await pool.execute(
+        `SELECT o.order_id, o.user_id, u.email, u.first_name, u.last_name,
+                o.status, o.payment_status, o.total_amount, o.shipping_fee, o.discount_amount,
+                o.created_at as order_date,
+                (SELECT COUNT(*) FROM order_items WHERE order_id = o.order_id) as item_count
+         ${from} ${where}
+         ORDER BY o.created_at DESC
+         LIMIT ${effectiveLimit} OFFSET ${offset}`,
+        params
+      )) as unknown as [Row[], unknown];
+      res.json({
+        status: "success",
+        data: { items: rows, page: effectivePage, total_pages: totalPages, total_items: totalItems },
+      });
+    })
+  );
+
+  app.get(
+    "/api/admin/orders/:id",
+    isAdmin,
+    asyncHandler(async (req, res) => {
+      const orderId = parseId(req.params.id);
+      if (orderId === null) {
+        res.status(400).json({ status: "error", message: "Invalid ID" });
+        return;
+      }
+      const pool = getPool();
+      const [orderRows] = (await pool.execute(
+        `
+        SELECT o.order_id, o.user_id, u.email, o.status as order_status, o.payment_status,
+               o.total_amount, o.shipping_fee, o.discount_amount, pc.code as promo_code,
+               o.shipping_address, o.created_at as order_date
+        FROM orders o
+        JOIN users u ON o.user_id = u.user_id
+        LEFT JOIN promo_codes pc ON o.promo_code_id = pc.promo_code_id
+        WHERE o.order_id = ?
+      `,
+        [orderId]
+      )) as unknown as [Array<Row & { items?: Row[]; history?: Row[] }>, unknown];
+      const order = orderRows[0];
+      if (!order) {
+        res.status(404).json({ status: "error", message: "Order not found" });
+        return;
+      }
+
+      const [items] = (await pool.execute(
+        `
+        SELECT oi.*, p.product_name, p.image_url, s.size_value
+        FROM order_items oi
+        JOIN products p ON oi.product_id = p.product_id
+        LEFT JOIN sizes s ON oi.size_id = s.size_id
+        WHERE oi.order_id = ?
+      `,
+        [orderId]
+      )) as unknown as [Row[], unknown];
+      order.items = items;
+
+      const [history] = (await pool.execute(
+        "SELECT status, created_at as date_updated FROM order_status_history WHERE order_id = ? ORDER BY created_at ASC",
+        [orderId]
+      )) as unknown as [Row[], unknown];
+      order.history = history;
+
+      res.json({ status: "success", data: order });
+    })
+  );
+
+  app.put(
+    "/api/admin/orders/payment",
+    isAdmin,
+    asyncHandler(async (req, res) => {
+      const { order_id, payment_status } = req.body ?? {};
+      const orderId = parseId(order_id);
+      if (orderId === null) {
+        res.status(400).json({ status: "error", message: "Invalid ID" });
+        return;
+      }
+
+      if (!ALLOWED_PAYMENT_STATUSES.includes(String(payment_status) as (typeof ALLOWED_PAYMENT_STATUSES)[number])) {
+        res.status(400).json({ status: "error", message: "Invalid payment status" });
+        return;
+      }
+      const next = String(payment_status);
+
+      const pool = getPool();
+      const conn = await pool.getConnection();
+      try {
+        await conn.beginTransaction();
+        const [orderRows] = (await conn.execute(
+          "SELECT payment_status FROM orders WHERE order_id = ? FOR UPDATE",
+          [orderId]
+        )) as unknown as [Array<{ payment_status: string }>, unknown];
+        const order = orderRows[0];
+
+        if (!order) {
+          await conn.rollback();
+          res.status(404).json({ status: "error", message: "Order not found" });
+          return;
+        }
+
+        if (order.payment_status === next) {
+          await conn.rollback();
+          res.json({ status: "success", message: `Order already marked as ${next}` });
+          return;
+        }
+
+        // Admins are intentionally unscoped: they may mark any order.
+        await conn.execute("UPDATE orders SET payment_status = ? WHERE order_id = ?", [next, orderId]);
+        await conn.execute("INSERT INTO order_status_history (order_id, status) VALUES (?, ?)", [orderId, next]);
+        await conn.commit();
+        res.json({ status: "success", message: `Order payment updated to ${next}` });
+      } catch {
+        try {
+          await conn.rollback();
+        } catch {
+          // ignore
+        }
+        console.error("Admin order payment update failed");
+        res.status(500).json({ status: "error", message: "Failed to update order payment" });
+      } finally {
+        conn.release();
+      }
+    })
+  );
+
+  // Promo / voucher codes
+  app.get(
+    "/api/admin/promo-codes",
+    isAdmin,
+    asyncHandler(async (_req, res) => {
+      const [rows] = (await getPool().execute(
+        "SELECT * FROM promo_codes ORDER BY created_at DESC"
+      )) as unknown as [Row[], unknown];
+      res.json({ status: "success", data: rows });
+    })
+  );
+
+  app.post(
+    "/api/admin/promo-codes",
+    isAdmin,
+    asyncHandler(async (req, res) => {
+      const { code, discount_type, discount_value, min_subtotal, expires_at, usage_limit, is_active } =
+        req.body ?? {};
+
+      const normalized = normalizePromoCode(code);
+      if (normalized === null) {
+        res.status(400).json({ status: "error", message: "Invalid promo code (3-50 chars: letters, numbers, dash, underscore)" });
+        return;
+      }
+      if (!ALLOWED_DISCOUNT_TYPES.has(String(discount_type))) {
+        res.status(400).json({ status: "error", message: "Invalid discount type" });
+        return;
+      }
+      const value = Number(discount_value);
+      if (!Number.isFinite(value) || value <= 0 || (discount_type === "percent" && value > 100)) {
+        res.status(400).json({ status: "error", message: "Invalid discount value" });
+        return;
+      }
+      const minSub = min_subtotal === undefined || min_subtotal === null || min_subtotal === "" ? 0 : Number(min_subtotal);
+      if (!Number.isFinite(minSub) || minSub < 0) {
+        res.status(400).json({ status: "error", message: "Invalid minimum subtotal" });
+        return;
+      }
+      const expiry = parsePromoExpiry(expires_at);
+      if (!expiry.ok) {
+        res.status(400).json({ status: "error", message: "Invalid expiry date" });
+        return;
+      }
+      const limitVal =
+        usage_limit === undefined || usage_limit === null || usage_limit === "" ? null : Number(usage_limit);
+      if (limitVal !== null && (!Number.isInteger(limitVal) || limitVal <= 0)) {
+        res.status(400).json({ status: "error", message: "Invalid usage limit" });
+        return;
+      }
+      let active = 1;
+      if (is_active !== undefined && is_active !== null && is_active !== "") {
+        const parsed = parsePromoActive(is_active);
+        if (parsed === null) {
+          res.status(400).json({ status: "error", message: "Invalid is_active" });
+          return;
+        }
+        active = parsed;
+      }
+
+      try {
+        const pool = getPool();
+        const [dup] = (await pool.execute("SELECT 1 FROM promo_codes WHERE code = ? LIMIT 1", [
+          normalized,
+        ])) as unknown as [Row[], unknown];
+        if (dup.length > 0) {
+          res.status(409).json({ status: "error", message: "Already exists" });
+          return;
+        }
+        const [result] = (await pool.execute(
+          `INSERT INTO promo_codes
+           (code, discount_type, discount_value, min_subtotal, expires_at, usage_limit, is_active)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [normalized, String(discount_type), value, minSub, expiry.value, limitVal, active]
+        )) as unknown as [{ insertId: number }, unknown];
+        res.json({ status: "success", data: { promo_code_id: result.insertId } });
+      } catch (error: unknown) {
+        console.error("Admin promo create failed");
+        const mapped = mapDbError(error, "Failed to create promo code");
+        res.status(mapped.http).json({ status: "error", message: mapped.message });
+      }
+    })
+  );
+
+  app.put(
+    "/api/admin/promo-codes/:id",
+    isAdmin,
+    asyncHandler(async (req, res) => {
+      const pid = parseId(req.params.id);
+      if (pid === null) {
+        res.status(400).json({ status: "error", message: "Invalid ID" });
+        return;
+      }
+      const { code, discount_type, discount_value, min_subtotal, expires_at, usage_limit, is_active } =
+        req.body ?? {};
+      const sets: string[] = [];
+      const vals: Array<string | number | Date | null> = [];
+
+      if (code !== undefined && code !== null && code !== "") {
+        const normalized = normalizePromoCode(code);
+        if (normalized === null) {
+          res.status(400).json({ status: "error", message: "Invalid promo code (3-50 chars: letters, numbers, dash, underscore)" });
+          return;
+        }
+        const [dup] = (await getPool().execute(
+          "SELECT 1 FROM promo_codes WHERE code = ? AND promo_code_id != ? LIMIT 1",
+          [normalized, pid]
+        )) as unknown as [Row[], unknown];
+        if (dup.length > 0) {
+          res.status(409).json({ status: "error", message: "Already exists" });
+          return;
+        }
+        sets.push("code = ?");
+        vals.push(normalized);
+      }
+      if (discount_type !== undefined && discount_type !== null && discount_type !== "") {
+        if (!ALLOWED_DISCOUNT_TYPES.has(String(discount_type))) {
+          res.status(400).json({ status: "error", message: "Invalid discount type" });
+          return;
+        }
+        sets.push("discount_type = ?");
+        vals.push(String(discount_type));
+      }
+      if (discount_value !== undefined && discount_value !== null && discount_value !== "") {
+        const value = Number(discount_value);
+        const typeRow =
+          discount_type !== undefined && discount_type !== null && discount_type !== ""
+            ? String(discount_type)
+            : null;
+        let effectiveType = typeRow;
+        if (!effectiveType) {
+          const [existing] = (await getPool().execute(
+            "SELECT discount_type FROM promo_codes WHERE promo_code_id = ?",
+            [pid]
+          )) as unknown as [Array<{ discount_type: string }>, unknown];
+          effectiveType = existing[0]?.discount_type ?? "fixed";
+        }
+        if (!Number.isFinite(value) || value <= 0 || (effectiveType === "percent" && value > 100)) {
+          res.status(400).json({ status: "error", message: "Invalid discount value" });
+          return;
+        }
+        sets.push("discount_value = ?");
+        vals.push(value);
+      }
+      if (min_subtotal !== undefined && min_subtotal !== null && min_subtotal !== "") {
+        const minSub = Number(min_subtotal);
+        if (!Number.isFinite(minSub) || minSub < 0) {
+          res.status(400).json({ status: "error", message: "Invalid minimum subtotal" });
+          return;
+        }
+        sets.push("min_subtotal = ?");
+        vals.push(minSub);
+      }
+      if (expires_at !== undefined) {
+        if (expires_at === null || expires_at === "") {
+          sets.push("expires_at = ?");
+          vals.push(null);
+        } else {
+          const expiry = parsePromoExpiry(expires_at);
+          if (!expiry.ok || expiry.value === null) {
+            res.status(400).json({ status: "error", message: "Invalid expiry date" });
+            return;
+          }
+          sets.push("expires_at = ?");
+          vals.push(expiry.value);
+        }
+      }
+      if (usage_limit !== undefined) {
+        if (usage_limit === null || usage_limit === "") {
+          sets.push("usage_limit = ?");
+          vals.push(null);
+        } else {
+          const limitVal = Number(usage_limit);
+          if (!Number.isInteger(limitVal) || limitVal <= 0) {
+            res.status(400).json({ status: "error", message: "Invalid usage limit" });
+            return;
+          }
+          sets.push("usage_limit = ?");
+          vals.push(limitVal);
+        }
+      }
+      if (is_active !== undefined && is_active !== null && is_active !== "") {
+        const parsed = parsePromoActive(is_active);
+        if (parsed === null) {
+          res.status(400).json({ status: "error", message: "Invalid is_active" });
+          return;
+        }
+        sets.push("is_active = ?");
+        vals.push(parsed);
+      }
+
+      if (sets.length === 0) {
+        res.status(400).json({ status: "error", message: "No fields to update" });
+        return;
+      }
+      try {
+        const [result] = (await getPool().execute(
+          `UPDATE promo_codes SET ${sets.join(", ")} WHERE promo_code_id = ?`,
+          [...vals, pid]
+        )) as unknown as [{ affectedRows: number }, unknown];
+        if (result.affectedRows === 0) {
+          res.status(404).json({ status: "error", message: "Promo code not found" });
+          return;
+        }
+        res.json({ status: "success", message: "Promo code updated" });
+      } catch (error: unknown) {
+        console.error("Admin promo update failed");
+        const mapped = mapDbError(error, "Failed to update promo code");
+        res.status(mapped.http).json({ status: "error", message: mapped.message });
+      }
+    })
+  );
+
+  app.delete(
+    "/api/admin/promo-codes/:id",
+    isAdmin,
+    asyncHandler(async (req, res) => {
+      const pid = parseId(req.params.id);
+      if (pid === null) {
+        res.status(400).json({ status: "error", message: "Invalid ID" });
+        return;
+      }
+      try {
+        const [result] = (await getPool().execute("DELETE FROM promo_codes WHERE promo_code_id = ?", [
+          pid,
+        ])) as unknown as [{ affectedRows: number }, unknown];
+        if (result.affectedRows === 0) {
+          res.status(404).json({ status: "error", message: "Promo code not found" });
+          return;
+        }
+        res.json({ status: "success", message: "Promo code deleted" });
+      } catch {
+        res.status(400).json({ status: "error", message: "Failed to delete promo code" });
       }
     })
   );

@@ -25,6 +25,7 @@ export function Checkout() {
   const [orderId, setOrderId] = useState<number | null>(null);
   const [orderSummary, setOrderSummary] = useState<any>(null);
   const [step, setStep] = useState(1);
+  const [promoCode, setPromoCode] = useState("");
 
   const [shippingInfo, setShippingInfo] = useState({
     fullName: "",
@@ -82,9 +83,11 @@ export function Checkout() {
     setIsProcessing(true);
     try {
       const shippingAddress = `${shippingInfo.fullName}, ${shippingInfo.address}, ${shippingInfo.city}, ${shippingInfo.province}, ${shippingInfo.zipCode}. Phone: ${shippingInfo.phone}`;
+      const code = promoCode.trim();
       const response = await apiService.checkout({
         shipping_address: shippingAddress,
-        payment_method: selectedPayment
+        payment_method: selectedPayment,
+        ...(code ? { promo_code: code } : {}),
       });
 
       if (response.status === "success" || response.status === "created") {
@@ -139,6 +142,12 @@ export function Checkout() {
               <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Subtotal</span>
               <span className="text-xs font-black">₱{(orderSummary?.subtotal || subtotal).toLocaleString()}</span>
             </div>
+            {orderSummary?.discount ? (
+              <div className="flex justify-between">
+                <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Voucher {orderSummary?.promo_code ? `(${orderSummary.promo_code})` : ""}</span>
+                <span className="text-xs font-black">−₱{Number(orderSummary.discount).toLocaleString()}</span>
+              </div>
+            ) : null}
             <div className="flex justify-between">
               <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Artisan Delivery</span>
               <span className="text-xs font-black">{orderSummary ? (orderSummary.shipping === 0 ? "FREE" : `₱${orderSummary.shipping}`) : (shipping === 0 ? "FREE" : `₱${shipping}`)}</span>
@@ -308,6 +317,15 @@ export function Checkout() {
               </div>
 
               <div className="space-y-4 pt-8 border-t border-white/10 relative z-10">
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-widest text-gray-500 mb-2">Voucher code</label>
+                  <input
+                    value={promoCode}
+                    onChange={(e) => setPromoCode(e.target.value)}
+                    placeholder="WELCOME10"
+                    className="w-full px-5 py-3 bg-white/5 border border-white/10 rounded-2xl outline-none font-bold text-sm placeholder:text-gray-600 focus:border-primary transition-all uppercase"
+                  />
+                </div>
                 <div className="flex justify-between items-center text-gray-500">
                   <span className="text-[10px] font-black uppercase tracking-widest">Subtotal</span>
                   <span className="text-xs font-black italic text-white">₱{subtotal.toLocaleString()}</span>

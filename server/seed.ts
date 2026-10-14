@@ -38,6 +38,13 @@ export async function seedData(): Promise<void> {
   await seedUser("bicolandiaweaves", "bicolandiaweaves@soletrack.com", "seller123", "seller", "Bicolandia Weaves", "Lourdes", "Bautista");
   await seedUser("juandelacruz", "juan.delacruz@example.com", "customer123", "customer", null, "Juan", "dela Cruz");
 
+  // Demo voucher: 10% off, no minimum, 500 uses, expires in a year.
+  await pool.execute(
+    `INSERT INTO promo_codes (code, discount_type, discount_value, min_subtotal, expires_at, usage_limit, is_active)
+     SELECT 'WELCOME10', 'percent', 10, 0, DATE_ADD(NOW(), INTERVAL 1 YEAR), 500, 1
+     WHERE NOT EXISTS (SELECT 1 FROM promo_codes WHERE code = 'WELCOME10')`
+  );
+
   const [catRows] = (await pool.execute(
     "SELECT COUNT(*) as count FROM categories"
   )) as unknown as [Array<{ count: number }>, unknown];
@@ -215,15 +222,20 @@ export async function seedData(): Promise<void> {
       const shipping = calcShipping(subtotal);
       const total = subtotal + shipping;
 
-      await pool.execute(
-        "INSERT INTO orders (user_id, total_amount, shipping_fee, status, payment_method, shipping_address, created_at) VALUES (?, ?, ?, ?, ?, ?, DATE_SUB(NOW(), INTERVAL ? DAY))",
-        [customerId, total, shipping, order.status, order.pay, addr(order.days), order.days]
-      );
-
       const [orderResult] = (await pool.execute(
-        "SELECT LAST_INSERT_ID() as oid"
-      )) as unknown as [Array<{ oid: number }>, unknown];
-      const orderId = orderResult[0].oid;
+        "INSERT INTO orders (user_id, total_amount, shipping_fee, status, payment_status, payment_method, shipping_address, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, DATE_SUB(NOW(), INTERVAL ? DAY))",
+        [
+          customerId,
+          total,
+          shipping,
+          order.status,
+          order.status === "cancelled" ? "unpaid" : "paid",
+          order.pay,
+          addr(order.days),
+          order.days,
+        ]
+      )) as unknown as [{ insertId: number }, unknown];
+      const orderId = orderResult.insertId;
 
       const statusFlow = ["pending", "confirmed", "shipped", "delivered"];
       const statusIdx = order.status === "cancelled" ? 0 : statusFlow.indexOf(order.status);
@@ -259,6 +271,11 @@ export async function seedData(): Promise<void> {
         await pool.execute(
           "INSERT INTO order_status_history (order_id, status, created_at) VALUES (?, ?, DATE_SUB(NOW(), INTERVAL ? DAY))",
           [orderId, "cancelled", order.days]
+        );
+      } else {
+        await pool.execute(
+          "INSERT INTO order_status_history (order_id, status, created_at) VALUES (?, ?, DATE_SUB(NOW(), INTERVAL ? DAY))",
+          [orderId, "paid", confirmedDays]
         );
       }
 
