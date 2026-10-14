@@ -38,6 +38,13 @@ export async function seedData(): Promise<void> {
   await seedUser("bicolandiaweaves", "bicolandiaweaves@soletrack.com", "seller123", "seller", "Bicolandia Weaves", "Lourdes", "Bautista");
   await seedUser("juandelacruz", "juan.delacruz@example.com", "customer123", "customer", null, "Juan", "dela Cruz");
 
+  // Demo voucher: 10% off, no minimum, 500 uses, expires in a year.
+  await pool.execute(
+    `INSERT INTO promo_codes (code, discount_type, discount_value, min_subtotal, expires_at, usage_limit, is_active)
+     SELECT 'WELCOME10', 'percent', 10, 0, DATE_ADD(NOW(), INTERVAL 1 YEAR), 500, 1
+     WHERE NOT EXISTS (SELECT 1 FROM promo_codes WHERE code = 'WELCOME10')`
+  );
+
   const [catRows] = (await pool.execute(
     "SELECT COUNT(*) as count FROM categories"
   )) as unknown as [Array<{ count: number }>, unknown];

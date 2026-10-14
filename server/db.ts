@@ -199,6 +199,43 @@ export async function initDb(): Promise<void> {
   `);
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS promo_codes (
+      promo_code_id INT AUTO_INCREMENT PRIMARY KEY,
+      code VARCHAR(50) NOT NULL UNIQUE,
+      discount_type ENUM('percent', 'fixed') NOT NULL,
+      discount_value DECIMAL(10, 2) NOT NULL,
+      min_subtotal DECIMAL(10, 2) NOT NULL DEFAULT 0,
+      expires_at DATETIME NULL DEFAULT NULL,
+      usage_limit INT NULL DEFAULT NULL,
+      used_count INT NOT NULL DEFAULT 0,
+      is_active TINYINT(1) NOT NULL DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `);
+
+  // Checkout discount columns. Idempotent: add only when missing so existing
+  // local DBs upgrade on next boot. No FK — promos stay deletable and past
+  // orders keep their discount_amount.
+  const [promoIdCol] = (await pool.query(
+    `SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'orders' AND COLUMN_NAME = 'promo_code_id'
+     LIMIT 1`,
+    [dbName]
+  )) as unknown as [Array<Record<string, unknown>>, unknown];
+  if (promoIdCol.length === 0) {
+    await pool.query(`ALTER TABLE orders ADD COLUMN promo_code_id INT NULL DEFAULT NULL`);
+  }
+  const [discountCol] = (await pool.query(
+    `SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'orders' AND COLUMN_NAME = 'discount_amount'
+     LIMIT 1`,
+    [dbName]
+  )) as unknown as [Array<Record<string, unknown>>, unknown];
+  if (discountCol.length === 0) {
+    await pool.query(`ALTER TABLE orders ADD COLUMN discount_amount DECIMAL(10, 2) NOT NULL DEFAULT 0`);
+  }
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS sessions (
       token VARCHAR(64) PRIMARY KEY,
       user_id INT NOT NULL,

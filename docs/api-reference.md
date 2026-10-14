@@ -32,14 +32,14 @@ All paths verified against `server/` route registrations (`server/routes/*.ts`, 
 | POST | `/api/cart/add` | `{product_id, quantity, size_id?}` → upsert |
 | PUT | `/api/cart/update?id=` | `{quantity}` |
 | DELETE | `/api/cart/remove?id=` | — |
-| POST | `/api/checkout` | `{shipping_address, payment_method}` → `{order_id, subtotal, shipping, total}`; transactional; free shipping over ₱500 else ₱50 |
+| POST | `/api/checkout` | `{shipping_address, payment_method, promo_code?}` → `{order_id, subtotal, discount, promo_code, shipping, total}`; transactional; shipping free over ₱500 else ₱50 evaluated on discounted subtotal; `WELCOME10` seeded (10% off) | unknown/inactive/expired/over-limit/under-minimum promo → 400; usage increments once per order in the same transaction |
 
 ## Orders / reviews / payments (auth, owner-scoped)
 
 | Method | Path | Shape / rule |
 |---|---|---|
 | GET | `/api/orders/my` | own orders, each with ≤3 preview items |
-| GET | `/api/orders/details?id=` | owner, or seller with item in order, or admin; includes `items[]` + `history[]` |
+| GET | `/api/orders/details?id=` | owner, or seller with item in order, or admin; includes `items[]` + `history[]` + `discount_amount`/`promo_code` |
 | POST | `/api/orders/simulate?id=` | advances pending→confirmed→shipped→delivered; customer: own only; seller: own-item only; admin: any |
 | PUT | `/api/orders/cancel?id=` | owner only; allowed from `pending`/`confirmed`; restocks each line into `inventory` in the same transaction + `cancelled` history row; double-cancel → 400 without double-restock |
 | POST | `/api/reviews` | `{product_id, rating 1–5, comment?}`; requires `delivered` order containing product → 400 otherwise; one per `(product_id,user_id)` → 400 on duplicate (`UNIQUE` backstop; legacy `user_id NULL` rows exempt) |
@@ -78,6 +78,8 @@ All paths verified against `server/` route registrations (`server/routes/*.ts`, 
 | GET/POST | `/api/admin/sizes` | list (numeric sort) / `{size_value}` |
 | DELETE | `/api/admin/sizes/:id` | delete (400 if inventory uses it; no update route) |
 | PUT | `/api/admin/orders/payment` | `{order_id, payment_status ∈ paid/refunded}`; admin-only, any order; idempotent re-mark; appends `order_status_history` |
+| GET/POST | `/api/admin/promo-codes` | list / `{code (3–50 A-Z0-9_-, stored uppercase), discount_type ∈ percent\|fixed, discount_value (>0; percent ≤100), min_subtotal? (≥0, default 0), expires_at? (NULL = never), usage_limit? (NULL = unlimited), is_active?}`; duplicate → 409 |
+| PUT/DELETE | `/api/admin/promo-codes/:id` | update (same validation; `expires_at: null`/`usage_limit: null` clears; `used_count` server-managed) / hard delete (past orders keep `discount_amount`) |
 
-Count: ~37 `/api/*` route registrations (54 `app.*` matches include static/PWA fallbacks).
+Count: ~41 `/api/*` route registrations (58 `app.*` matches include static/PWA fallbacks).
 No pagination anywhere; list endpoints return full sets.
