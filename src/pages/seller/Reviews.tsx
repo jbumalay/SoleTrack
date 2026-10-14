@@ -1,0 +1,233 @@
+import { useState, useEffect } from "react";
+import { apiService } from "@/services/api";
+import { motion, AnimatePresence } from "motion/react";
+import { Star, MessageSquare, Package, ChevronRight, Inbox } from "lucide-react";
+
+function StarDisplay({ rating }: { rating: number }) {
+  return (
+    <div className="flex items-center gap-0.5">
+      {[1, 2, 3, 4, 5].map((n) => (
+        <Star
+          key={n}
+          size={12}
+          className={n <= Math.round(rating) ? "fill-primary text-primary" : "text-gray-200 fill-gray-200"}
+        />
+      ))}
+    </div>
+  );
+}
+
+export default function SellerReviews() {
+  const [products, setProducts] = useState<any[]>([]);
+  const [selectedProduct, setSelectedProduct] = useState<any>(null);
+  const [reviews, setReviews] = useState<any[]>([]);
+  const [loadingProducts, setLoadingProducts] = useState(true);
+  const [loadingReviews, setLoadingReviews] = useState(false);
+
+  useEffect(() => {
+    async function fetchProducts() {
+      try {
+        const res = await apiService.getSellerProducts();
+        if (res.status === "success") {
+          const withReviews = res.data.filter((p: any) => Number(p.total_reviews) > 0);
+          const rest = res.data.filter((p: any) => Number(p.total_reviews) === 0);
+          setProducts([...withReviews, ...rest]);
+          if (withReviews.length > 0) selectProduct(withReviews[0]);
+        }
+      } finally {
+        setLoadingProducts(false);
+      }
+    }
+    fetchProducts();
+  }, []);
+
+  async function selectProduct(product: any) {
+    setSelectedProduct(product);
+    setLoadingReviews(true);
+    try {
+      const res = await apiService.getSellerProductReviews(product.product_id);
+      if (res.status === "success") setReviews(res.data);
+    } catch {
+      setReviews([]);
+    } finally {
+      setLoadingReviews(false);
+    }
+  }
+
+  const avgRating = selectedProduct ? Number(selectedProduct.average_rating) || 0 : 0;
+  const totalReviews = selectedProduct ? Number(selectedProduct.total_reviews) || 0 : 0;
+
+  const ratingBuckets = [5, 4, 3, 2, 1].map((n) => ({
+    star: n,
+    count: reviews.filter((r) => Math.round(Number(r.rating)) === n).length,
+  }));
+
+  return (
+    <div className="p-10 lg:p-20 space-y-16 max-w-[120rem] mx-auto">
+      <div>
+        <span className="text-[10px] font-black uppercase tracking-[0.3em] text-primary">Customer Feedback</span>
+        <h1 className="text-5xl font-black text-gray-900 tracking-tighter italic mt-2">
+          Patron <span className="text-primary underline underline-offset-8 decoration-4">Reviews</span>
+        </h1>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+        {/* Product list */}
+        <div className="bg-white rounded-[3rem] border border-gray-100 shadow-sm overflow-hidden">
+          <div className="px-8 py-6 border-b border-gray-50">
+            <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Your Artifacts</p>
+          </div>
+          {loadingProducts ? (
+            <div className="flex items-center justify-center py-20">
+              <div className="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
+            </div>
+          ) : products.length === 0 ? (
+            <div className="py-20 flex flex-col items-center gap-3 text-gray-300">
+              <Package size={32} />
+              <p className="text-[10px] font-black uppercase tracking-widest">No products yet</p>
+            </div>
+          ) : (
+            <ul className="divide-y divide-gray-50">
+              {products.map((p) => {
+                const isActive = selectedProduct?.product_id === p.product_id;
+                const reviewCount = Number(p.total_reviews) || 0;
+                const avg = Number(p.average_rating) || 0;
+                return (
+                  <li key={p.product_id}>
+                    <button
+                      onClick={() => selectProduct(p)}
+                      className={`w-full flex items-center gap-4 px-8 py-5 text-left transition-colors ${isActive ? "bg-primary/5" : "hover:bg-gray-50"}`}
+                    >
+                      <div className="w-12 h-12 rounded-2xl overflow-hidden bg-gray-100 shrink-0">
+                        <img src={p.image_url} alt={p.product_name} className="w-full h-full object-cover" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-xs font-black italic truncate ${isActive ? "text-primary" : "text-gray-900"}`}>
+                          {p.product_name}
+                        </p>
+                        {reviewCount > 0 ? (
+                          <div className="flex items-center gap-2 mt-1">
+                            <StarDisplay rating={avg} />
+                            <span className="text-[9px] font-black text-gray-400">{reviewCount}</span>
+                          </div>
+                        ) : (
+                          <p className="text-[9px] font-black uppercase tracking-widest text-gray-300 mt-1">No reviews</p>
+                        )}
+                      </div>
+                      <ChevronRight size={14} className={isActive ? "text-primary" : "text-gray-200"} />
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+
+        {/* Reviews panel */}
+        <div className="lg:col-span-2 space-y-6">
+          {!selectedProduct ? (
+            <div className="bg-white rounded-[3rem] border border-gray-100 shadow-sm flex flex-col items-center justify-center py-32 gap-4 text-gray-300">
+              <MessageSquare size={40} />
+              <p className="text-[10px] font-black uppercase tracking-widest">Select a product to view reviews</p>
+            </div>
+          ) : (
+            <>
+              {/* Summary card */}
+              <div className="bg-white rounded-[3rem] border border-gray-100 shadow-sm p-10">
+                <div className="flex flex-col md:flex-row items-start md:items-center gap-8">
+                  <div className="w-20 h-20 rounded-3xl overflow-hidden bg-gray-100 shrink-0">
+                    <img src={selectedProduct.image_url} alt={selectedProduct.product_name} className="w-full h-full object-cover" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Viewing reviews for</p>
+                    <h2 className="text-2xl font-black italic tracking-tight text-gray-900 mt-1">{selectedProduct.product_name}</h2>
+                  </div>
+                  <div className="flex flex-col items-center gap-2 bg-gray-50 rounded-3xl px-10 py-6 shrink-0">
+                    <span className="text-5xl font-black italic text-gray-900">
+                      {totalReviews > 0 ? avgRating.toFixed(1) : "—"}
+                    </span>
+                    <StarDisplay rating={avgRating} />
+                    <p className="text-[9px] font-black uppercase tracking-widest text-gray-400">
+                      {totalReviews} {totalReviews === 1 ? "review" : "reviews"}
+                    </p>
+                  </div>
+                </div>
+
+                {totalReviews > 0 && (
+                  <div className="mt-8 space-y-3">
+                    {ratingBuckets.map(({ star, count }) => (
+                      <div key={star} className="flex items-center gap-4">
+                        <div className="flex items-center gap-1 w-16 shrink-0">
+                          <span className="text-[10px] font-black text-gray-500">{star}</span>
+                          <Star size={10} className="fill-primary text-primary" />
+                        </div>
+                        <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-primary rounded-full transition-all duration-700"
+                            style={{ width: totalReviews > 0 ? `${(count / totalReviews) * 100}%` : "0%" }}
+                          />
+                        </div>
+                        <span className="text-[10px] font-black text-gray-400 w-6 text-right">{count}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Individual reviews */}
+              {loadingReviews ? (
+                <div className="flex items-center justify-center py-20">
+                  <div className="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
+                </div>
+              ) : reviews.length === 0 ? (
+                <div className="bg-white rounded-[3rem] border border-gray-100 shadow-sm flex flex-col items-center justify-center py-24 gap-4 text-gray-300">
+                  <Inbox size={36} />
+                  <p className="text-[10px] font-black uppercase tracking-widest">No reviews yet for this product</p>
+                </div>
+              ) : (
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={selectedProduct.product_id}
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -12 }}
+                    className="space-y-4"
+                  >
+                    {reviews.map((review) => (
+                      <div
+                        key={review.review_id}
+                        className="bg-white rounded-[2.5rem] border border-gray-100 shadow-sm p-8"
+                      >
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex items-center gap-4">
+                            <div className="w-10 h-10 rounded-2xl bg-primary/10 flex items-center justify-center shrink-0">
+                              <span className="text-xs font-black text-primary">
+                                {(review.customer_name || "A")[0].toUpperCase()}
+                              </span>
+                            </div>
+                            <div>
+                              <p className="text-xs font-black italic text-gray-900">{review.customer_name || "Anonymous"}</p>
+                              <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">
+                                {new Date(review.created_at).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}
+                              </p>
+                            </div>
+                          </div>
+                          <StarDisplay rating={Number(review.rating)} />
+                        </div>
+                        {review.comment && (
+                          <p className="mt-5 text-sm text-gray-600 leading-relaxed italic pl-14">
+                            "{review.comment}"
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </motion.div>
+                </AnimatePresence>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
