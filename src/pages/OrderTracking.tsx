@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useParams, Link } from "react-router";
-import { motion } from "motion/react";
+import { motion, AnimatePresence } from "motion/react";
 import { 
   Package, 
   Truck, 
@@ -9,7 +9,8 @@ import {
   ChevronLeft, 
   MapPin, 
   ShoppingBag,
-  XCircle
+  XCircle,
+  RotateCcw
 } from "lucide-react";
 import { apiService } from "../services/api";
 import { toast } from "sonner";
@@ -70,6 +71,18 @@ const statusConfig: Record<string, { icon: any; color: string; label: string; de
     color: "text-red-500", 
     label: "Cancelled", 
     description: "This order has been cancelled." 
+  },
+  requested: {
+    icon: RotateCcw,
+    color: "text-amber-500",
+    label: "Return Requested",
+    description: "Your return request is awaiting seller approval."
+  },
+  approved: {
+    icon: CheckCircle2,
+    color: "text-teal-500",
+    label: "Return Approved",
+    description: "Your return was approved — stock has been restored."
   }
 };
 
@@ -80,6 +93,23 @@ export function OrderTracking() {
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
   const [showCancelModal, setShowCancelModal] = useState(false);
+  const [showReturnModal, setShowReturnModal] = useState(false);
+  const [requestingReturn, setRequestingReturn] = useState(false);
+
+  const confirmReturn = async () => {
+    if (!id) return;
+    setRequestingReturn(true);
+    try {
+      await apiService.requestReturn(Number(id));
+      toast.success("Return requested — the seller will review it");
+      setShowReturnModal(false);
+      window.location.reload();
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : "Failed to request return");
+    } finally {
+      setRequestingReturn(false);
+    }
+  };
 
   useEffect(() => {
     const fetchOrder = async () => {
@@ -124,6 +154,8 @@ export function OrderTracking() {
 
   const currentStatusIndex = statusOrder.indexOf(order.order_status);
   const isCancelled = order.order_status === "cancelled";
+  const isReturning = order.order_status === "requested" || order.order_status === "approved";
+  const returnConfig = statusConfig[order.order_status];
 
   return (
     <div className="min-h-screen bg-gray-50/50 pb-20">
@@ -167,7 +199,18 @@ export function OrderTracking() {
           <div className="lg:col-span-2 space-y-8">
             {/* Status Steps */}
             <div className="bg-white rounded-[2.5rem] p-10 shadow-2xl shadow-gray-200/50 border border-gray-100">
-              {!isCancelled ? (
+              {isReturning ? (
+                <div className="text-center py-10">
+                  <returnConfig.icon size={64} className={`mx-auto mb-6 ${returnConfig.color}`} />
+                  <h3 className="text-2xl font-black italic text-gray-900 mb-2">{returnConfig.label}</h3>
+                  <p className="text-gray-500">{returnConfig.description}</p>
+                  {order.history.filter(h => ["requested", "approved"].includes(h.status)).slice(-1).map((h, idx) => (
+                    <p key={idx} className="mt-4 font-mono text-[9px] font-black text-gray-400">
+                      {new Date(h.date_updated).toLocaleString()}
+                    </p>
+                  ))}
+                </div>
+              ) : !isCancelled ? (
                 <div className="relative">
                   {statusOrder.map((step, idx) => {
                     const config = statusConfig[step];
@@ -294,6 +337,16 @@ export function OrderTracking() {
               </button>
             )}
 
+            {order.order_status === "delivered" && (
+              <button
+                onClick={() => setShowReturnModal(true)}
+                className="w-full py-5 bg-amber-500 hover:bg-amber-600 text-white rounded-2xl font-black italic text-sm transition-all shadow-lg shadow-amber-500/30 flex items-center justify-center gap-3"
+              >
+                <RotateCcw size={20} />
+                Request Return
+              </button>
+            )}
+
             {/* Need Help */}
             <div className="bg-gray-900 rounded-[2rem] p-8 text-white">
               <h3 className="text-lg font-black italic mb-4">Need Help?</h3>
@@ -305,6 +358,41 @@ export function OrderTracking() {
           </div>
         </div>
       </div>
+
+      {/* Return confirmation */}
+      <AnimatePresence>
+        {showReturnModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-gray-900/40 backdrop-blur-sm" onClick={() => setShowReturnModal(false)}>
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              onClick={(e) => e.stopPropagation()}
+              className="max-w-md w-full bg-white rounded-[2rem] p-8 shadow-2xl"
+            >
+              <h3 className="text-lg font-black italic mb-4">Request a Return</h3>
+              <p className="text-sm text-gray-500 font-medium leading-relaxed mb-8">
+                Once requested, the seller will review your return. Approved returns restore stock and refund your payment.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowReturnModal(false)}
+                  className="flex-1 py-4 bg-gray-50 text-gray-400 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-gray-100 transition-all"
+                >
+                  Keep Order
+                </button>
+                <button
+                  onClick={confirmReturn}
+                  disabled={requestingReturn}
+                  className="flex-1 py-4 bg-amber-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-amber-600 transition-all disabled:opacity-50"
+                >
+                  {requestingReturn ? "Requesting..." : "Confirm Return"}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       <CancelModal
         isOpen={showCancelModal}

@@ -13,6 +13,7 @@ import {
   CreditCard,
   X,
   XCircle,
+  RotateCcw,
   ExternalLink,
   ArrowRight
 } from "lucide-react";
@@ -63,7 +64,46 @@ export default function SellerOrders() {
     confirmed: { color: "bg-blue-50 text-blue-600 border-blue-100", label: "Craft Confirmed", icon: CheckCircle },
     shipped: { color: "bg-purple-50 text-purple-600 border-purple-100", label: "In Transit", icon: Truck },
     delivered: { color: "bg-green-50 text-green-600 border-green-100", label: "Arrived", icon: Package },
-    cancelled: { color: "bg-red-50 text-red-600 border-red-100", label: "Cancelled", icon: XCircle }
+    cancelled: { color: "bg-red-50 text-red-600 border-red-100", label: "Cancelled", icon: XCircle },
+    requested: { color: "bg-amber-50 text-amber-600 border-amber-100", label: "Return Requested", icon: RotateCcw },
+    approved: { color: "bg-teal-50 text-teal-600 border-teal-100", label: "Return Approved", icon: RotateCcw }
+  };
+
+  /** Only lifecycle statuses are seller-selectable (backend enforces transitions). */
+  const LIFECYCLE_STATUSES = ["pending", "confirmed", "shipped", "delivered", "cancelled"];
+
+  const paymentConfig: any = {
+    unpaid: { color: "bg-gray-50 text-gray-500 border-gray-100", label: "Unpaid" },
+    paid: { color: "bg-green-50 text-green-600 border-green-100", label: "Paid" },
+    refunded: { color: "bg-red-50 text-red-600 border-red-100", label: "Refunded" }
+  };
+
+  const markPayment = async (paymentStatus: "paid" | "refunded") => {
+    if (!selectedOrder) return;
+    try {
+      await apiService.markSellerOrderPayment(selectedOrder.order_id, paymentStatus);
+      toast.success(`Order marked ${paymentStatus}`);
+      setSelectedOrder({ ...selectedOrder, payment_status: paymentStatus });
+      fetchOrders();
+    } catch (error) {
+      toast.error("Failed to update payment");
+    }
+  };
+
+  const approveReturn = async () => {
+    if (!selectedOrder) return;
+    try {
+      await apiService.approveSellerReturn(selectedOrder.order_id);
+      toast.success("Return approved — stock restored");
+      setSelectedOrder({
+        ...selectedOrder,
+        order_status: "approved",
+        payment_status: selectedOrder.payment_status === "paid" ? "refunded" : selectedOrder.payment_status,
+      });
+      fetchOrders();
+    } catch (error) {
+      toast.error("Failed to approve return");
+    }
   };
 
   const getStatusIcon = (status: string) => {
@@ -196,7 +236,7 @@ export default function SellerOrders() {
                           <Package className="text-primary" size={16} /> Artifact Status management
                         </h3>
                         <div className="grid grid-cols-2 gap-3">
-                          {Object.keys(statusConfig).map((status) => (
+                          {LIFECYCLE_STATUSES.map((status) => (
                             <button
                               key={status}
                               onClick={() => updateStatus(selectedOrder.order_id, status)}
@@ -213,29 +253,82 @@ export default function SellerOrders() {
                         </div>
                       </div>
 
-                      <div className="p-10 rounded-[3rem] bg-gray-50/50 border border-gray-100 space-y-8">
-                        <div className="flex items-start gap-4">
-                           <div className="w-10 h-10 bg-white rounded-xl shadow-sm flex items-center justify-center text-primary"><User size={18} /></div>
-                           <div>
-                              <p className="text-[9px] font-black uppercase tracking-widest text-gray-400">Patron Information</p>
-                              <p className="text-sm font-black italic text-gray-900 mt-1">{selectedOrder.first_name} {selectedOrder.last_name}</p>
-                           </div>
-                        </div>
-                        <div className="flex items-start gap-4">
-                           <div className="w-10 h-10 bg-white rounded-xl shadow-sm flex items-center justify-center text-primary"><MapPin size={18} /></div>
-                           <div>
-                              <p className="text-[9px] font-black uppercase tracking-widest text-gray-400">Destination</p>
-                              <p className="text-xs font-bold text-gray-600 mt-1 leading-relaxed">{selectedOrder.shipping_address}</p>
-                           </div>
-                        </div>
-                        <div className="flex items-start gap-4">
-                           <div className="w-10 h-10 bg-white rounded-xl shadow-sm flex items-center justify-center text-primary"><CreditCard size={18} /></div>
-                           <div>
-                              <p className="text-[9px] font-black uppercase tracking-widest text-gray-400">Payment Strategy</p>
-                              <p className="text-xs font-bold text-gray-600 mt-1 uppercase tracking-widest">{selectedOrder.payment_method}</p>
-                           </div>
-                        </div>
-                      </div>
+                       <div className="p-10 rounded-[3rem] bg-gray-50/50 border border-gray-100 space-y-8">
+                         <div className="flex items-start gap-4">
+                            <div className="w-10 h-10 bg-white rounded-xl shadow-sm flex items-center justify-center text-primary"><User size={18} /></div>
+                            <div>
+                               <p className="text-[9px] font-black uppercase tracking-widest text-gray-400">Patron Information</p>
+                               <p className="text-sm font-black italic text-gray-900 mt-1">{selectedOrder.first_name} {selectedOrder.last_name}</p>
+                            </div>
+                         </div>
+                         <div className="flex items-start gap-4">
+                            <div className="w-10 h-10 bg-white rounded-xl shadow-sm flex items-center justify-center text-primary"><MapPin size={18} /></div>
+                            <div>
+                               <p className="text-[9px] font-black uppercase tracking-widest text-gray-400">Destination</p>
+                               <p className="text-xs font-bold text-gray-600 mt-1 leading-relaxed">{selectedOrder.shipping_address}</p>
+                            </div>
+                         </div>
+                         <div className="flex items-start gap-4">
+                            <div className="w-10 h-10 bg-white rounded-xl shadow-sm flex items-center justify-center text-primary"><CreditCard size={18} /></div>
+                            <div>
+                               <p className="text-[9px] font-black uppercase tracking-widest text-gray-400">Payment Strategy</p>
+                               <p className="text-xs font-bold text-gray-600 mt-1 uppercase tracking-widest">{selectedOrder.payment_method}</p>
+                            </div>
+                         </div>
+                       </div>
+
+                       {/* Payment control */}
+                       <div className="p-10 rounded-[3rem] bg-white border border-gray-100 space-y-6">
+                         <div className="flex items-center justify-between">
+                           <h3 className="text-xs font-black uppercase tracking-widest text-gray-900 italic flex items-center gap-3">
+                             <CreditCard className="text-primary" size={16} /> Payment Status
+                           </h3>
+                           <span className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest border ${paymentConfig[selectedOrder.payment_status]?.color || paymentConfig.unpaid.color}`}>
+                             {paymentConfig[selectedOrder.payment_status]?.label || selectedOrder.payment_status || "Unpaid"}
+                           </span>
+                         </div>
+                         <div className="flex gap-3">
+                           <button
+                             onClick={() => markPayment("paid")}
+                             disabled={selectedOrder.payment_status === "paid"}
+                             className="flex-1 px-6 py-4 bg-green-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-green-600 transition-all disabled:opacity-30"
+                           >
+                             Mark Paid
+                           </button>
+                           <button
+                             onClick={() => markPayment("refunded")}
+                             disabled={selectedOrder.payment_status === "refunded"}
+                             className="flex-1 px-6 py-4 bg-red-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-red-600 transition-all disabled:opacity-30"
+                           >
+                             Mark Refunded
+                           </button>
+                         </div>
+                         <p className="text-[9px] font-bold text-gray-300 uppercase tracking-widest leading-relaxed">
+                           Re-marking the same status is a no-op. Refunds are also applied automatically on approved returns of paid orders.
+                         </p>
+                       </div>
+
+                       {/* Return approval */}
+                       {selectedOrder.order_status === 'requested' && (
+                         <motion.div
+                           initial={{ opacity: 0, y: 12 }}
+                           animate={{ opacity: 1, y: 0 }}
+                           className="p-10 rounded-[3rem] bg-amber-50/50 border border-amber-100 space-y-6"
+                         >
+                           <h3 className="text-xs font-black uppercase tracking-widest text-amber-600 italic flex items-center gap-3">
+                             <RotateCcw size={16} /> Return Requested
+                           </h3>
+                           <p className="text-xs font-bold text-amber-700/80 leading-relaxed">
+                             The patron requested a return. Approving restocks each line and marks the order refunded when it was paid.
+                           </p>
+                           <button
+                             onClick={approveReturn}
+                             className="w-full px-8 py-5 bg-amber-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-amber-600 transition-all shadow-xl shadow-amber-200"
+                           >
+                             Approve Return
+                           </button>
+                         </motion.div>
+                       )}
                    </div>
 
                    {/* Right: Items */}

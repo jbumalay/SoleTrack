@@ -7,6 +7,8 @@ import {
   LogOut, 
   ShieldCheck,
   Package,
+  ShoppingCart,
+  Ticket,
   Menu,
   X
 } from "lucide-react";
@@ -36,6 +38,8 @@ export default function AdminLayout() {
   const navigation = [
     { name: 'Dashboard', href: '/admin', icon: LayoutDashboard },
     { name: 'User Management', href: '/admin/users', icon: Users },
+    { name: 'Orders', href: '/admin/orders', icon: ShoppingCart },
+    { name: 'Vouchers', href: '/admin/promos', icon: Ticket },
     { name: 'Product Catalog', href: '/admin/categories', icon: Package },
     { name: 'Platform Reports', href: '/admin/reports', icon: BarChart3 },
   ];

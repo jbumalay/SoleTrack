@@ -25,6 +25,8 @@ import { Toaster } from "sonner";
 const AdminLayout = lazy(() => import("./components/admin/AdminLayout"));
 const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard"));
 const AdminUsers = lazy(() => import("./pages/admin/AdminUsers"));
+const AdminOrders = lazy(() => import("./pages/admin/AdminOrders"));
+const AdminPromos = lazy(() => import("./pages/admin/AdminPromos"));
 const AdminReports = lazy(() => import("./pages/admin/AdminReports"));
 const AdminCategories = lazy(() => import("./pages/admin/AdminCategories"));
 const SellerLayout = lazy(() => import("./pages/seller/SellerLayout"));
@@ -77,6 +79,8 @@ export default function App() {
               <Route path="/admin" element={<AdminLayout />}>
                 <Route index element={<AdminDashboard />} />
                 <Route path="users" element={<AdminUsers />} />
+                <Route path="orders" element={<AdminOrders />} />
+                <Route path="promos" element={<AdminPromos />} />
                 <Route path="reports" element={<AdminReports />} />
                 <Route path="categories" element={<AdminCategories />} />
               </Route>
