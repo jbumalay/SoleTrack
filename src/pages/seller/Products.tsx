@@ -17,6 +17,7 @@ import {
 import { toast } from "sonner";
 import { LOW_STOCK_THRESHOLD } from "@/constants";
 import { normalizeList } from "@/utils/normalizeList";
+import { ImagePicker } from "@/components/ImagePicker";
 
 export default function SellerProducts() {
   const [products, setProducts] = useState<any[]>([]);
@@ -29,6 +30,7 @@ export default function SellerProducts() {
   const [editValues, setEditValues] = useState<any>({});
   const [categories, setCategories] = useState<any[]>([]);
   const [sizes, setSizes] = useState<any[]>([]);
+  const [addImageUrl, setAddImageUrl] = useState("");
 
   useEffect(() => {
     fetchData();
@@ -139,7 +141,7 @@ export default function SellerProducts() {
       description: data.description,
       base_price: Number(data.base_price),
       category_id: Number(data.category_id),
-      image_url: data.image_url || "https://images.unsplash.com/photo-1603487742131-416a4220b29a?q=80&w=300&h=300&fit=crop",
+      image_url: addImageUrl || "https://images.unsplash.com/photo-1603487742131-416a4220b29a?q=80&w=300&h=300&fit=crop",
       inventory
     };
 
@@ -148,6 +150,7 @@ export default function SellerProducts() {
       if (response.status === "success") {
         toast.success("New product debuted");
         setIsAddModalOpen(false);
+        setAddImageUrl("");
         fetchData();
       }
     } catch (error) {
@@ -360,16 +363,9 @@ export default function SellerProducts() {
                     </div>
                   </div>
 
-                  {/* Right Column: Visuals & Inventory */}
-                  <div className="space-y-8">
-                    <div className="space-y-3">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 italic">Artifact Visual (URL)</label>
-                      <input 
-                        name="image_url"
-                        className="w-full px-6 py-4 bg-gray-50 border-none rounded-2xl text-xs font-black italic focus:ring-2 focus:ring-primary shadow-sm"
-                        placeholder="https://images.unsplash.com/..."
-                      />
-                    </div>
+                   {/* Right Column: Visuals & Inventory */}
+                   <div className="space-y-8">
+                     <ImagePicker value={addImageUrl} onChange={setAddImageUrl} />
                     
                     <div className="p-8 rounded-[2.5rem] bg-amber-50/50 border border-amber-100 space-y-6">
                        <h3 className="text-xs font-black uppercase tracking-widest text-amber-600 flex items-center gap-2">
@@ -490,23 +486,15 @@ export default function SellerProducts() {
                         </div>
                       </div>
                     </div>
-                    <div className="space-y-3">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 italic">Update Visual (URL)</label>
-                      <input 
-                        value={editValues.image_url}
-                        onChange={(e) => setEditValues({...editValues, image_url: e.target.value})}
-                        className="w-full px-6 py-4 bg-gray-50 border-none rounded-2xl text-xs font-black italic focus:ring-2 focus:ring-primary shadow-sm"
-                        placeholder="https://images.unsplash.com/..."
-                      />
-                    </div>
                   </div>
 
-                  {/* Right Column: Inventory */}
-                  <div className="space-y-8">
-                    <div className="aspect-square w-full rounded-[2.5rem] overflow-hidden bg-gray-50 border border-gray-100 shadow-inner">
-                        <img src={editValues.image_url} alt="Preview" className="w-full h-full object-cover" />
-                    </div>
-                    
+                  {/* Right Column: Visual & Inventory */}
+                   <div className="space-y-8">
+                     <ImagePicker
+                       value={editValues.image_url || ""}
+                       onChange={(url) => setEditValues({ ...editValues, image_url: url })}
+                     />
+                     
                     <div className="p-8 rounded-[2.5rem] bg-amber-50/50 border border-amber-100 space-y-6">
                        <h3 className="text-xs font-black uppercase tracking-widest text-amber-600 flex items-center gap-2">
                          <Warehouse size={14} /> Adjust Inventory

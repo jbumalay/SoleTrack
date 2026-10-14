@@ -55,6 +55,7 @@ All paths verified against `server/` route registrations (`server/routes/*.ts`, 
 | POST | `/api/seller/products` | `{product_name, description, base_price, category_id, image_url, inventory[]?}` |
 | PUT | `/api/seller/products` | `{product_id, …same}`; ownership check; transactional; rejects negative stock |
 | DELETE | `/api/seller/products?id=` | soft delete |
+| POST | `/api/seller/uploads` | `{filename?, content_type, data (base64)}` | image-only (`jpeg`/`png`/`webp`/`gif`/`avif`), ≤2MB after decode, magic-byte sniffed; writes `public/uploads/product-<uuid>.<ext>` (served at `/uploads/...`) → `{url, filename}`; 400 on bad type/size/payload |
 | GET | `/api/seller/reports/sales?days=` (default 7) | `{metrics{total_revenue,total_orders,aov,total_customers,products_sold,pending_orders_count}, trend[], categoryBreakdown[], topSelling[10]}` |
 | GET | `/api/seller/reviews?product_id=` (required) | ownership-checked review list |
 | GET | `/api/seller/orders` | distinct orders with own products (+ own items each) |

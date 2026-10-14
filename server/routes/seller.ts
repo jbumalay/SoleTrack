@@ -1,4 +1,7 @@
 import type { Express } from "express";
+import fs from "fs";
+import path from "path";
+import crypto from "crypto";
 import { getPool } from "../db";
 import { LOW_STOCK_THRESHOLD } from "../config";
 import { isSeller, type AuthedRequest } from "../auth";
@@ -14,6 +17,28 @@ const NEXT_STATUS: Record<string, string[]> = {
 };
 
 const ALLOWED_PAYMENT_STATUSES = ["paid", "refunded"] as const;
+
+/** Demo-scale image uploads: base64 body -> disk under public/uploads. */
+const UPLOAD_DIR = path.join(process.cwd(), "public", "uploads");
+const ALLOWED_IMAGE_TYPES: Record<string, string> = {
+  "image/jpeg": ".jpg",
+  "image/png": ".png",
+  "image/webp": ".webp",
+  "image/gif": ".gif",
+  "image/avif": ".avif",
+};
+const MAX_UPLOAD_BYTES = 2 * 1024 * 1024;
+
+/** Sniff magic bytes so a mislabeled content-type cannot smuggle other files. */
+function hasImageMagicBytes(buffer: Buffer): boolean {
+  if (buffer.length < 12) return false;
+  if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return true; // JPEG
+  if (buffer.subarray(0, 8).toString("hex") === "89504e470d0a1a0a") return true; // PNG
+  if (buffer.subarray(0, 4).toString("ascii") === "GIF8") return true; // GIF
+  if (buffer.subarray(0, 4).toString("ascii") === "RIFF" && buffer.subarray(8, 12).toString("ascii") === "WEBP") return true; // WebP
+  if (buffer.subarray(4, 8).toString("ascii") === "ftyp") return true; // AVIF/HEIF
+  return false;
+}
 
 function invalidProductFields(
   product_name: unknown,
@@ -36,6 +61,41 @@ function invalidProductFields(
 }
 
 export function registerSellerRoutes(app: Express): void {
+  app.post(
+    "/api/seller/uploads",
+    isSeller,
+    asyncHandler(async (req, res) => {
+      const { filename, content_type, data } = req.body ?? {};
+      const ext = ALLOWED_IMAGE_TYPES[String(content_type)];
+      if (!ext) {
+        res.status(400).json({ status: "error", message: "Only JPG, PNG, WebP, GIF or AVIF images are allowed" });
+        return;
+      }
+      if (filename !== undefined && (typeof filename !== "string" || filename.length > 255)) {
+        res.status(400).json({ status: "error", message: "Invalid filename" });
+        return;
+      }
+      if (typeof data !== "string" || data.length === 0) {
+        res.status(400).json({ status: "error", message: "Image data is required" });
+        return;
+      }
+      const buffer = Buffer.from(data, "base64");
+      if (buffer.length === 0 || buffer.length > MAX_UPLOAD_BYTES) {
+        res.status(400).json({ status: "error", message: "Image must be a non-empty file up to 2MB" });
+        return;
+      }
+      if (!hasImageMagicBytes(buffer)) {
+        res.status(400).json({ status: "error", message: "File does not look like an image" });
+        return;
+      }
+
+      fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+      const storedName = `product-${crypto.randomUUID()}${ext}`;
+      fs.writeFileSync(path.join(UPLOAD_DIR, storedName), buffer);
+      res.json({ status: "success", data: { url: `/uploads/${storedName}`, filename: storedName } });
+    })
+  );
+
   app.get(
     "/api/seller/dashboard",
     isSeller,

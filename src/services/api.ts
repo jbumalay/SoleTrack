@@ -290,6 +290,25 @@ export const apiService = {
     return this.request(`/seller/reports/sales?days=${days}`);
   },
 
+  /**
+   * Upload a product image (base64 -> disk). Returns { url, filename } on success.
+   */
+  async uploadProductImage(file: File): Promise<ApiResponse<{ url: string; filename: string }>> {
+    const base64 = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = String(reader.result);
+        resolve(result.slice(result.indexOf(",") + 1));
+      };
+      reader.onerror = () => reject(new Error("Could not read the selected file"));
+      reader.readAsDataURL(file);
+    });
+    return this.request("/seller/uploads", {
+      method: "POST",
+      body: JSON.stringify({ filename: file.name, content_type: file.type, data: base64 }),
+    });
+  },
+
   async getSellerProductReviews(productId: number): Promise<ApiResponse<any>> {
     return this.request(`/seller/reviews?product_id=${productId}`);
   },

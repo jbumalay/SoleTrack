@@ -22,7 +22,8 @@ import { registerAdminRoutes } from "./routes/admin";
  */
 export async function createApp(): Promise<Express> {
   const app = express();
-  app.use(express.json({ limit: "500kb" }));
+  // 4mb headroom: product image uploads arrive as base64 JSON (2MB file -> ~2.7MB body).
+  app.use(express.json({ limit: "4mb" }));
 
   // Malformed JSON / oversized body -> uniform 400 envelope (never HTML).
   // Must be registered before routes so body-parse failures are JSON.
@@ -51,6 +52,8 @@ export async function createApp(): Promise<Express> {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
+    // Runtime-uploaded product images live in public/uploads (not copied into dist/).
+    app.use("/uploads", express.static(path.join(process.cwd(), "public", "uploads")));
     app.get("/manifest.webmanifest", (_req, res) => {
       res.type("application/manifest+json");
       res.sendFile(path.join(distPath, "manifest.webmanifest"));
