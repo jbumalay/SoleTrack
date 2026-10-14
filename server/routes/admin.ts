@@ -2,11 +2,21 @@ import type { Express } from "express";
 import bcrypt from "bcryptjs";
 import { getPool } from "../db";
 import { isAdmin, type AuthedRequest } from "../auth";
-import { asyncHandler, EMAIL_RE, mapDbError, parseId, type Row } from "../utils";
+import { asyncHandler, EMAIL_RE, mapDbError, parseId, parseListLimit, parsePage, type Row } from "../utils";
 
 const ALLOWED_USER_ROLES = new Set(["customer", "seller", "admin"]);
 const ALLOWED_USER_STATUSES = new Set(["active", "pending_approval", "suspended", "inactive"]);
 const ALLOWED_PAYMENT_STATUSES = ["paid", "refunded"] as const;
+const ALLOWED_ORDER_STATUSES = new Set([
+  "pending",
+  "confirmed",
+  "shipped",
+  "delivered",
+  "cancelled",
+  "requested",
+  "approved",
+]);
+const DEFAULT_ADMIN_ORDERS_LIMIT = 12;
 const ALLOWED_DISCOUNT_TYPES = new Set(["percent", "fixed"]);
 const PROMO_CODE_RE = /^[A-Z0-9_-]{3,50}$/;
 
@@ -571,6 +581,133 @@ export function registerAdminRoutes(app: Express): void {
       } catch {
         res.status(400).json({ status: "error", message: "Failed to delete size" });
       }
+    })
+  );
+
+  // Admin Orders View
+  app.get(
+    "/api/admin/orders",
+    isAdmin,
+    asyncHandler(async (req, res) => {
+      const { search, status, page, limit } = req.query;
+
+      let safePage: number | undefined;
+      if (page !== undefined && page !== "") {
+        safePage = parsePage(page);
+        if (safePage === undefined) {
+          res.status(400).json({ status: "error", message: "Invalid page" });
+          return;
+        }
+      }
+      let safeLimit: number | undefined;
+      if (limit !== undefined && limit !== "") {
+        safeLimit = parseListLimit(limit);
+        if (safeLimit === undefined) {
+          res.status(400).json({ status: "error", message: "Invalid limit" });
+          return;
+        }
+      }
+      const effectivePage = safePage ?? 1;
+      const effectiveLimit = safeLimit ?? DEFAULT_ADMIN_ORDERS_LIMIT;
+
+      const searchStr = search === undefined || search === null ? "" : String(search).trim();
+      const statusStr = status === undefined || status === null ? "" : String(status).trim();
+      if (statusStr !== "" && !ALLOWED_ORDER_STATUSES.has(statusStr)) {
+        res.status(400).json({ status: "error", message: "Invalid status" });
+        return;
+      }
+
+      let where = `WHERE 1 = 1`;
+      const params: Array<string | number> = [];
+      if (statusStr !== "") {
+        where += ` AND o.status = ?`;
+        params.push(statusStr);
+      }
+      if (searchStr !== "") {
+        if (/^\d+$/.test(searchStr)) {
+          where += ` AND (o.order_id = ? OR u.email LIKE ? OR u.first_name LIKE ? OR u.last_name LIKE ?)`;
+          params.push(Number.parseInt(searchStr, 10), `%${searchStr}%`, `%${searchStr}%`, `%${searchStr}%`);
+        } else {
+          where += ` AND (u.email LIKE ? OR u.first_name LIKE ? OR u.last_name LIKE ?)`;
+          const like = `%${searchStr}%`;
+          params.push(like, like, like);
+        }
+      }
+
+      const from = `FROM orders o JOIN users u ON o.user_id = u.user_id`;
+      const pool = getPool();
+      const [countRows] = (await pool.execute(`SELECT COUNT(*) as count ${from} ${where}`, params)) as unknown as [
+        [{ count: number }],
+        unknown,
+      ];
+      const totalItems = Number(countRows[0]?.count ?? 0) || 0;
+      const totalPages = totalItems === 0 ? 0 : Math.ceil(totalItems / effectiveLimit);
+      const offset = (effectivePage - 1) * effectiveLimit;
+
+      const [rows] = (await pool.execute(
+        `SELECT o.order_id, o.user_id, u.email, u.first_name, u.last_name,
+                o.status, o.payment_status, o.total_amount, o.shipping_fee, o.discount_amount,
+                o.created_at as order_date,
+                (SELECT COUNT(*) FROM order_items WHERE order_id = o.order_id) as item_count
+         ${from} ${where}
+         ORDER BY o.created_at DESC
+         LIMIT ${effectiveLimit} OFFSET ${offset}`,
+        params
+      )) as unknown as [Row[], unknown];
+      res.json({
+        status: "success",
+        data: { items: rows, page: effectivePage, total_pages: totalPages, total_items: totalItems },
+      });
+    })
+  );
+
+  app.get(
+    "/api/admin/orders/:id",
+    isAdmin,
+    asyncHandler(async (req, res) => {
+      const orderId = parseId(req.params.id);
+      if (orderId === null) {
+        res.status(400).json({ status: "error", message: "Invalid ID" });
+        return;
+      }
+      const pool = getPool();
+      const [orderRows] = (await pool.execute(
+        `
+        SELECT o.order_id, o.user_id, u.email, o.status as order_status, o.payment_status,
+               o.total_amount, o.shipping_fee, o.discount_amount, pc.code as promo_code,
+               o.shipping_address, o.created_at as order_date
+        FROM orders o
+        JOIN users u ON o.user_id = u.user_id
+        LEFT JOIN promo_codes pc ON o.promo_code_id = pc.promo_code_id
+        WHERE o.order_id = ?
+      `,
+        [orderId]
+      )) as unknown as [Array<Row & { items?: Row[]; history?: Row[] }>, unknown];
+      const order = orderRows[0];
+      if (!order) {
+        res.status(404).json({ status: "error", message: "Order not found" });
+        return;
+      }
+
+      const [items] = (await pool.execute(
+        `
+        SELECT oi.*, p.product_name, p.image_url, s.size_value
+        FROM order_items oi
+        JOIN products p ON oi.product_id = p.product_id
+        LEFT JOIN sizes s ON oi.size_id = s.size_id
+        WHERE oi.order_id = ?
+      `,
+        [orderId]
+      )) as unknown as [Row[], unknown];
+      order.items = items;
+
+      const [history] = (await pool.execute(
+        "SELECT status, created_at as date_updated FROM order_status_history WHERE order_id = ? ORDER BY created_at ASC",
+        [orderId]
+      )) as unknown as [Row[], unknown];
+      order.history = history;
+
+      res.json({ status: "success", data: order });
     })
   );
 

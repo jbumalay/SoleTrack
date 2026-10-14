@@ -80,8 +80,10 @@ All paths verified against `server/` route registrations (`server/routes/*.ts`, 
 | GET/POST | `/api/admin/sizes` | list (numeric sort) / `{size_value}` |
 | DELETE | `/api/admin/sizes/:id` | delete (400 if inventory uses it; no update route) |
 | PUT | `/api/admin/orders/payment` | `{order_id, payment_status ∈ paid/refunded}`; admin-only, any order; idempotent re-mark; appends `order_status_history` |
+| GET | `/api/admin/orders?search=&status=&page=&limit=` | paginated `{items[],page,total_pages,total_items}` (defaults `page=1,limit=12`, max 100); `search` matches order id/email/name, `status` exact; admin-only, seller/customer → 403 |
+| GET | `/api/admin/orders/:id` | order-details shape (`items[]` + `history[]`, incl. `discount_amount`/`promo_code`) + customer `email`; admin-only |
 | GET/POST | `/api/admin/promo-codes` | list / `{code (3–50 A-Z0-9_-, stored uppercase), discount_type ∈ percent\|fixed, discount_value (>0; percent ≤100), min_subtotal? (≥0, default 0), expires_at? (NULL = never), usage_limit? (NULL = unlimited), is_active?}`; duplicate → 409 |
 | PUT/DELETE | `/api/admin/promo-codes/:id` | update (same validation; `expires_at: null`/`usage_limit: null` clears; `used_count` server-managed) / hard delete (past orders keep `discount_amount`) |
 
-Count: ~43 `/api/*` route registrations (60 `app.*` matches include static/PWA fallbacks).
+Count: ~45 `/api/*` route registrations (62 `app.*` matches include static/PWA fallbacks).
 No pagination anywhere; list endpoints return full sets.
