@@ -8,8 +8,6 @@ import { normalizeList } from "@/utils/normalizeList";
 import { toast } from "sonner";
 
 export function Products() {
-  const navigate = useNavigate();
-  void navigate;
   const [searchParams, setSearchParams] = useSearchParams();
   const [products, setProducts] = useState<any[]>([]);
   const [categories, setCategories] = useState<{category_id: number, category_name: string}[]>([]);
@@ -141,7 +139,7 @@ export function Products() {
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
             <div>
               <nav className="flex items-center gap-2 text-[10px] uppercase font-black tracking-widest text-gray-400 mb-2">
-                <Link to="/stores" className="hover:text-primary transition-colors">Store</Link>
+                <Link to="/stores" className="hover:text-primary transition-colors">Stores</Link>
                 <span>/</span>
                 <span className="text-gray-900">{selectedCategory}</span>
               </nav>

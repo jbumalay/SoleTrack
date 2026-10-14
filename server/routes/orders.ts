@@ -112,6 +112,10 @@ export function registerOrderRoutes(app: Express): void {
         res.status(401).json({ status: "error", message: "Login required" });
         return;
       }
+      if (user.status !== "active") {
+        res.status(403).json({ status: "error", message: "Account inactive" });
+        return;
+      }
 
       const { product_id, rating, comment } = req.body ?? {};
       if (product_id === undefined || product_id === null || rating === undefined || rating === null) {
@@ -310,6 +314,10 @@ export function registerOrderRoutes(app: Express): void {
         res.status(401).json({ status: "error", message: "Login required" });
         return;
       }
+      if (user.status !== "active") {
+        res.status(403).json({ status: "error", message: "Account inactive" });
+        return;
+      }
 
       const orderId = parseId(req.query.id);
       if (orderId === null) {
@@ -322,9 +330,9 @@ export function registerOrderRoutes(app: Express): void {
       try {
         await conn.beginTransaction();
         const [orderRows] = (await conn.execute(
-          "SELECT status FROM orders WHERE order_id = ? AND user_id = ? FOR UPDATE",
+          "SELECT status, payment_status FROM orders WHERE order_id = ? AND user_id = ? FOR UPDATE",
           [orderId, user.user_id]
-        )) as unknown as [Array<{ status: string }>, unknown];
+        )) as unknown as [Array<{ status: string; payment_status: string }>, unknown];
         const order = orderRows[0];
         if (!order) {
           await conn.rollback();
@@ -357,6 +365,10 @@ export function registerOrderRoutes(app: Express): void {
           user.user_id,
         ]);
         await conn.execute("INSERT INTO order_status_history (order_id, status) VALUES (?, 'cancelled')", [orderId]);
+        if (order.payment_status === "paid") {
+          await conn.execute("UPDATE orders SET payment_status = 'refunded' WHERE order_id = ?", [orderId]);
+          await conn.execute("INSERT INTO order_status_history (order_id, status) VALUES (?, 'refunded')", [orderId]);
+        }
 
         await conn.commit();
         res.json({ status: "success", message: "Order cancelled" });
@@ -380,6 +392,10 @@ export function registerOrderRoutes(app: Express): void {
       const user = await getAuthenticatedUser(req);
       if (!user) {
         res.status(401).json({ status: "error", message: "Login required" });
+        return;
+      }
+      if (user.status !== "active") {
+        res.status(403).json({ status: "error", message: "Account inactive" });
         return;
       }
 

@@ -86,7 +86,7 @@ export function parseId(raw: unknown): number | null {
   }
   if (!/^\d+$/.test(s)) return null;
   const n = Number.parseInt(s, 10);
-  if (!Number.isSafeInteger(n) || n <= 0) return null;
+  if (!Number.isSafeInteger(n) || n <= 0 || n > 2147483647) return null;
   return n;
 }
 

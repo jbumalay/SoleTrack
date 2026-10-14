@@ -52,10 +52,11 @@ erDiagram
   `status` default `'pending'` (pending/confirmed/shipped/delivered/cancelled by
   convention, plus `requested`/`approved` for the returns flow),
   `payment_status` default `'unpaid'` (`unpaid` initial; owning seller or any admin
-  may mark `paid`/`refunded`, idempotent on re-mark; return approval sets
-  `refunded`), `promo_code_id` NULL (no FK — promos stay deletable),
+  may mark `paid`/`refunded`, idempotent on re-mark; cancel and return-approval
+  append `refunded` only when the order was `paid`), `promo_code_id` NULL (no FK — promos stay deletable),
   `discount_amount DECIMAL(10,2)` default `0`, `shipping_address TEXT`,
-  `payment_method`, `created_at`. Seed: 12 orders for the demo customer.
+  `payment_method`, `created_at`. Seed: 12 orders for the demo customer
+  (non-cancelled orders seeded `paid` with a `paid` history row).
 - **order_items** (`order_item_id` PK): `order_id`, `product_id`, `size_id` NULL,
   `quantity`, `price_at_purchase` (snapshot).
 - **order_status_history** (`history_id` PK): `order_id`, `status`, `created_at`.
@@ -74,8 +75,10 @@ erDiagram
 
 ## Integrity notes
 
-- FKs exist on most relations but **no FK** from `cart_items`/`order_items` with cascade
-  semantics documented; deletes rely on soft-delete + app checks.
+- FKs exist on most relations (`cart_items` → users/products/sizes,
+  `order_items` → orders/products/sizes, `orders` → users; no `CASCADE`
+  semantics) but **no FK** from `orders.promo_code_id` (promos stay hard-deletable);
+  deletes rely on soft-delete + app checks.
 - No unique constraint on `(user_id, product_id, size_id)` in `cart_items` — duplicates
   possible under race (upsert is read-then-write, no transaction). `reviews` **is**
   constrained (`UNIQUE(product_id, user_id)`).

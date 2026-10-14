@@ -120,10 +120,10 @@ export function Login() {
              <span className="text-[9px] font-black uppercase tracking-widest text-gray-300">Demo Testing Identities</span>
           </div>
           <div className="grid grid-cols-3 gap-2">
-             {["admin123", "seller123", "customer123"].map((id) => (
-                <div key={id} className="p-3 bg-gray-50 rounded-xl text-[8px] font-black uppercase tracking-tighter text-center">
-                   <div className="text-gray-400 mb-1">{id.replace('123', '')}</div>
-                   <div className="text-primary uppercase overflow-hidden text-ellipsis line-clamp-1">{id.replace('123', '')}@soletrack.com</div>
+             {[{ label: "admin", email: "admin@soletrack.com" }, { label: "seller", email: "bicolartisan@soletrack.com" }, { label: "customer", email: "juan.delacruz@example.com" }].map((id) => (
+                <div key={id.label} className="p-3 bg-gray-50 rounded-xl text-[8px] font-black uppercase tracking-tighter text-center">
+                   <div className="text-gray-400 mb-1">{id.label}</div>
+                   <div className="text-primary uppercase overflow-hidden text-ellipsis line-clamp-1">{id.email}</div>
                 </div>
              ))}
           </div>

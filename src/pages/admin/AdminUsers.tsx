@@ -59,7 +59,6 @@ export default function AdminUsers() {
   const handleUpdateStatus = async (user: any, newStatus: string) => {
     try {
       const response = await apiService.updateAdminUser(user.user_id, {
-        ...user,
         status: newStatus
       });
       if (response.status === "success") {

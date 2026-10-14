@@ -24,11 +24,13 @@
    free-shipping threshold on the **discounted** subtotal, and increments
    `used_count` once via a guarded `UPDATE` in the same transaction.
 3. **Returns as lifecycle extension.** `delivered` → `requested` (customer-owned
-   request) → `approved` (owning-seller approval, 403 otherwise). Approval
-   restocks each line (same logic as cancel-restock), sets
-   `payment_status = 'refunded'`, and appends `approved` + `refunded` history
-   rows. No reject path (not requested; keeps the item revertible). Cancel and
-   simulate/step-matching routes reject `requested`/`approved` orders.
+   request) → `approved` (owning-seller approval, 403 otherwise; ownership
+   checked before status errors). Approval restocks each line (same logic as
+   cancel-restock) and appends `approved` (+ `refunded` payment + history row
+   only when the order was `paid`, so unpaid/COD returns keep `unpaid`). Cancel
+   (customer or seller) follows the same restock path and likewise refunds only
+   when `paid`. No reject path (not requested; keeps the item revertible).
+   Cancel and simulate/step-matching routes reject `requested`/`approved` orders.
 4. **Admin orders API-first.** `GET /api/admin/orders` (paginated, search by
    id/email/name, exact `status`) and `GET /api/admin/orders/:id` (details
    shape + customer email), both `isAdmin`-only. The admin orders page itself

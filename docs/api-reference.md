@@ -32,7 +32,7 @@ All paths verified against `server/` route registrations (`server/routes/*.ts`, 
 | POST | `/api/cart/add` | `{product_id, quantity, size_id?}` → upsert |
 | PUT | `/api/cart/update?id=` | `{quantity}` |
 | DELETE | `/api/cart/remove?id=` | — |
-| POST | `/api/checkout` | `{shipping_address, payment_method, promo_code?}` → `{order_id, subtotal, discount, promo_code, shipping, total}`; transactional; shipping free over ₱500 else ₱50 evaluated on discounted subtotal; `WELCOME10` seeded (10% off) | unknown/inactive/expired/over-limit/under-minimum promo → 400; usage increments once per order in the same transaction |
+| POST | `/api/checkout` | `{shipping_address, payment_method, promo_code?}` → `{order_id, subtotal, discount, promo_code, shipping, total, freeShippingThreshold, standardShippingFee}`; transactional; shipping free over ₱500 else ₱50 evaluated on discounted subtotal; `WELCOME10` seeded (10% off) | unknown/inactive/expired/over-limit/under-minimum promo → 400; usage increments once per order in the same transaction |
 
 ## Orders / reviews / payments (auth, owner-scoped)
 
@@ -41,7 +41,7 @@ All paths verified against `server/` route registrations (`server/routes/*.ts`, 
 | GET | `/api/orders/my` | own orders, each with ≤3 preview items |
 | GET | `/api/orders/details?id=` | owner, or seller with item in order, or admin; includes `items[]` + `history[]` + `discount_amount`/`promo_code` |
 | POST | `/api/orders/simulate?id=` | advances pending→confirmed→shipped→delivered; customer: own only; seller: own-item only; admin: any |
-| PUT | `/api/orders/cancel?id=` | owner only; allowed from `pending`/`confirmed`; restocks each line into `inventory` in the same transaction + `cancelled` history row; double-cancel → 400 without double-restock; `requested`/`approved` orders cannot cancel |
+| PUT | `/api/orders/cancel?id=` | owner only (active accounts); allowed from `pending`/`confirmed`; restocks each line into `inventory` in the same transaction + `cancelled` history row (+ `refunded` row when the order was `paid`); double-cancel → 400 without double-restock; `requested`/`approved` orders cannot cancel |
 | POST | `/api/orders/return?id=` | owner only; allowed from `delivered` → sets `requested` + history row; non-delivered → 400 |
 | POST | `/api/reviews` | `{product_id, rating 1–5, comment?}`; requires `delivered` order containing product → 400 otherwise; one per `(product_id,user_id)` → 400 on duplicate (`UNIQUE` backstop; legacy `user_id NULL` rows exempt) |
 | GET | `/api/payment/history?order_id=` | owner or admin; returns `order_status_history` rows |
@@ -58,9 +58,9 @@ All paths verified against `server/` route registrations (`server/routes/*.ts`, 
 | GET | `/api/seller/reports/sales?days=` (default 7) | `{metrics{total_revenue,total_orders,aov,total_customers,products_sold,pending_orders_count}, trend[], categoryBreakdown[], topSelling[10]}` |
 | GET | `/api/seller/reviews?product_id=` (required) | ownership-checked review list |
 | GET | `/api/seller/orders` | distinct orders with own products (+ own items each) |
-| PUT | `/api/seller/orders/status` | `{order_id, status ∈ pending/confirmed/shipped/delivered/cancelled}`; blocks delivered/cancelled; requires own item |
+| PUT | `/api/seller/orders/status` | `{order_id, status ∈ pending/confirmed/shipped/delivered/cancelled}`; enforced `pending→confirmed/cancelled`, `confirmed→shipped/cancelled`, `shipped→delivered`; seller-cancel restocks each line + refunds when `paid`; requires own item (403 otherwise, checked before transition errors) |
 | PUT | `/api/seller/orders/payment` | `{order_id, payment_status ∈ paid/refunded}`; requires own item; 403 otherwise; idempotent re-mark; appends `order_status_history` |
-| PUT | `/api/seller/orders/return` | `{order_id}`; approves a `requested` return → `approved` + restocks each line in the same transaction + `payment_status=refunded` (`approved` + `refunded` history rows); non-requested → 400; other sellers' orders → 403 |
+| PUT | `/api/seller/orders/return` | `{order_id}`; approves a `requested` return → `approved` + restocks each line in the same transaction (+ `refunded` payment + history row only when the order was `paid`); non-requested → 400; other sellers' orders → 403 (checked before status errors) |
 | GET | `/api/seller/profile` | user fields + `profile` row |
 | PUT | `/api/seller/profile` | `{brand_name?, description?, logo_url?, banner_url?, location?, contact_email?, phone?}` (upsert) |
 
@@ -85,6 +85,6 @@ All paths verified against `server/` route registrations (`server/routes/*.ts`, 
 | GET/POST | `/api/admin/promo-codes` | list / `{code (3–50 A-Z0-9_-, stored uppercase), discount_type ∈ percent\|fixed, discount_value (>0; percent ≤100), min_subtotal? (≥0, default 0), expires_at? (NULL = never), usage_limit? (NULL = unlimited), is_active?}`; duplicate → 409 |
 | PUT/DELETE | `/api/admin/promo-codes/:id` | update (same validation; `expires_at: null`/`usage_limit: null` clears; `used_count` server-managed) / hard delete (past orders keep `discount_amount`) |
 
-Count: ~45 `/api/*` route registrations (62 `app.*` matches include static/PWA fallbacks).
-Paginated: `GET /api/products` (catalog mode), `GET /api/stores` (paged mode),
+Count: 56 `/api/*` route registrations (6 public + 4 auth + 5 cart + 7 orders + 13 seller + 21 admin).
+Paginated: `GET /api/products` (paged only when `search`/`sort`/`page` sent; `limit`-alone stays a bare array), `GET /api/stores` (paged when `search`/`page`/`limit` sent),
 `GET /api/admin/orders`; all other list endpoints return full sets.

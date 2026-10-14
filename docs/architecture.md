@@ -52,7 +52,9 @@ and at bootstrap. Session lifetime: 24h. No cookies, no refresh tokens.
 
 - **Public:** `/api/health`, products, categories, sizes, stores.
 - **Authenticated** (`getAuthenticatedUser`, `server/auth.ts`): cart, checkout,
-  orders/my, orders/details (owner/seller/admin-scoped), reviews, payment/history.
+  orders/my, orders/details (owner / owning-seller / admin), reviews (active accounts only),
+  cancel/return (owner + active). `orders/details` allows the owning seller;
+  `payment/history` is owner-or-admin only.
 - **`isSeller`** (`server/auth.ts`): role `seller` **and** `status === 'active'`.
   New seller registrations are `pending_approval` → blocked until admin activates.
 - **`isAdmin`** (`server/auth.ts`): role `admin` only. Registration rejects `admin` role (allowlist `customer|seller`).
@@ -66,13 +68,15 @@ and at bootstrap. Session lifetime: 24h. No cookies, no refresh tokens.
   discount applied before the shipping threshold is evaluated, so shipping is
   computed on the discounted subtotal; `used_count` increments once in the same
   transaction via a guarded `UPDATE`.
-- Cancel is transactional too (customer-owned, `pending`/`confirmed` only):
+- Cancel is transactional too (customer-owned and active, `pending`/`confirmed` only):
   reread `order_items`, restock each line into `inventory`, then set
-  `cancelled` + history row; terminal and in-return states reject with 400.
+  `cancelled` + history row (+ `refunded` row when the order was `paid`);
+  terminal and in-return states reject with 400. Seller-cancel follows the
+  same restock/refund path.
 - Returns extend the lifecycle (`delivered` → `requested` → `approved`): the
   customer requests on a `delivered` order; the owning seller approves, which
-  restocks each line (same logic as cancel), sets `payment_status = 'refunded'`,
-  and appends `approved` + `refunded` history rows — all one transaction.
+  restocks each line (same logic as cancel) and appends `approved` (+ `refunded`
+  only when the order was `paid`) — all one transaction.
   `simulate`/`cancel`/seller-status routes reject `requested`/`approved` orders.
 - Payment confirmation is transactional (`paid`/`refunded` allowlist): the
   owning seller (own-item check, 403 otherwise) or any admin marks the order;

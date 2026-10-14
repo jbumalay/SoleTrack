@@ -25,7 +25,7 @@ src/
   main.tsx                 # React mount
   constants.ts / types.ts
   context/AuthContext.tsx  # login/register/logout/me, localStorage token
-  services/api.ts          # fetch wrapper (Bearer header) + ~45 endpoint methods
+  services/api.ts          # fetch wrapper (Bearer header, omitted when logged out) + ~55 endpoint methods
   pages/                   # Home, Products, ProductDetail, Stores, StoreDetail,
                            # Cart, Checkout, About, Contact, Login, Register,
                            # Dashboards (customer), OrderTracking, NotFound,
@@ -71,8 +71,10 @@ scripts/                   # generate-icons.mjs, generate-screenshots.mjs (PWA a
 ## Frontend ↔ backend contract
 
 `src/services/api.ts` is the single client: `API_BASE_URL = "/api"`, same-origin
-fetch, `Authorization: Bearer <soletrack_token>` from `localStorage`, JSON-only
-handling (non-JSON → generic error). Every method maps 1:1 to a server route —
-see `api-reference.md`. Paginated endpoints return
+fetch, `Authorization: Bearer <soletrack_token>` from `localStorage` (omitted
+when logged out), JSON-only handling (non-JSON → generic error). Methods cover
+the main flows (catalog, cart/checkout incl. `promo_code`, orders incl.
+`requestReturn`, seller status/payment/return, admin users/orders/promos) —
+see `api-reference.md` for the full server surface. Paginated endpoints return
 `{items, page, total_pages, total_items}`, normalized client-side by
 `normalizeList` (which also accepts bare arrays); no retry, no refresh logic.
