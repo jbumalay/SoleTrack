@@ -6,6 +6,7 @@ import { Package, TrendingUp, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { CancelModal } from "@/components/CancelModal";
 import { normalizeList } from "@/utils/normalizeList";
+import { AddressBook } from "@/components/AddressBook";
 
 export function CustomerDashboard() {
   const [orders, setOrders] = useState<any[]>([]);
@@ -44,7 +45,10 @@ export function CustomerDashboard() {
           </div>
         </div>
 
-        <div className="max-w-4xl mx-auto">
+        <div className="max-w-4xl mx-auto space-y-12">
+          {/* Address Book */}
+          <AddressBook />
+
           {/* Orders Main */}
           <div className="w-full">
             <div className="bg-white rounded-[4rem] p-12 border border-gray-100 min-h-[600px] shadow-sm">

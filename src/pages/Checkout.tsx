@@ -1,17 +1,22 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router";
-import { CreditCard, Banknote, CheckCircle2, ShieldCheck, ArrowLeft, ChevronLeft, Loader2 } from "lucide-react";
+import { CreditCard, Banknote, CheckCircle2, ShieldCheck, ArrowLeft, ChevronLeft, Loader2, MapPin, Plus } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { apiService } from "@/services/api";
 import { CartItem } from "@/types";
 import { useAuth } from "@/context/AuthContext";
 import { SHIPPING_THRESHOLD, SHIPPING_FEE } from "@/constants";
+import { getSavedAddresses, saveAddress, newAddressId, addressToSnapshot, addressLine, SavedAddress } from "@/utils/addresses";
 import { toast } from "sonner";
 
 export function Checkout() {
   const navigate = useNavigate();
-  const { refreshCart, isAdmin, isSeller, loading: authLoading } = useAuth();
+  const { refreshCart, isAdmin, isSeller, loading: authLoading, user } = useAuth();
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>([]);
+  const [selectedAddressId, setSelectedAddressId] = useState<string>("new");
+  const [saveNewAddress, setSaveNewAddress] = useState(false);
+  const [newAddressLabel, setNewAddressLabel] = useState("");
 
   useEffect(() => {
     if (authLoading) return;
@@ -64,25 +69,55 @@ export function Checkout() {
   const shipping = subtotal > SHIPPING_THRESHOLD ? 0 : SHIPPING_FEE;
   const total = subtotal + shipping;
 
+  useEffect(() => {
+    const saved = getSavedAddresses();
+    setSavedAddresses(saved);
+    if (saved.length > 0) setSelectedAddressId(saved[0].id);
+    if (user?.email) setShippingInfo(prev => ({ ...prev, email: user.email }));
+  }, [user]);
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     setShippingInfo({ ...shippingInfo, [e.target.name]: e.target.value });
   };
+
+  const usingSavedAddress = savedAddresses.length > 0 && selectedAddressId !== "new";
+  const selectedAddress = usingSavedAddress
+    ? savedAddresses.find((a) => a.id === selectedAddressId) ?? null
+    : null;
 
   const handlePlaceOrder = async () => {
     if (!selectedPayment) {
       toast.error("Please select a payment method");
       return;
     }
-    const requiredFields = ["fullName", "email", "phone", "address", "city", "province", "zipCode"];
-    const missingFields = requiredFields.filter(field => !shippingInfo[field as keyof typeof shippingInfo]);
-    if (missingFields.length > 0) {
-      toast.error("Please fill in all shipping information fields");
-      return;
+    let shippingAddress: string;
+    if (selectedAddress) {
+      shippingAddress = addressToSnapshot(selectedAddress);
+    } else {
+      const requiredFields = ["fullName", "email", "phone", "address", "city", "province", "zipCode"];
+      const missingFields = requiredFields.filter(field => !shippingInfo[field as keyof typeof shippingInfo]);
+      if (missingFields.length > 0) {
+        toast.error("Please fill in all shipping information fields");
+        return;
+      }
+      shippingAddress = `${shippingInfo.fullName}, ${shippingInfo.address}, ${shippingInfo.city}, ${shippingInfo.province}, ${shippingInfo.zipCode}. Phone: ${shippingInfo.phone}`;
+      if (saveNewAddress && newAddressLabel.trim()) {
+        saveAddress({
+          id: newAddressId(),
+          label: newAddressLabel.trim(),
+          full_name: shippingInfo.fullName,
+          phone: shippingInfo.phone,
+          address: shippingInfo.address,
+          city: shippingInfo.city,
+          province: shippingInfo.province,
+          zip_code: shippingInfo.zipCode,
+          email: shippingInfo.email,
+        });
+      }
     }
 
     setIsProcessing(true);
     try {
-      const shippingAddress = `${shippingInfo.fullName}, ${shippingInfo.address}, ${shippingInfo.city}, ${shippingInfo.province}, ${shippingInfo.zipCode}. Phone: ${shippingInfo.phone}`;
       const code = promoCode.trim();
       const response = await apiService.checkout({
         shipping_address: shippingAddress,
@@ -208,43 +243,114 @@ export function Checkout() {
                   className="bg-white rounded-[3rem] p-10 shadow-sm border border-gray-100"
                 >
                   <h2 className="text-2xl font-black mb-8 italic tracking-tight">Delivery <span className="text-primary">Details</span></h2>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="md:col-span-2">
-                       <InputLabel>Full Artisan Name</InputLabel>
-                       <CheckoutInput name="fullName" value={shippingInfo.fullName} onChange={handleInputChange} placeholder="Juan Dela Cruz" />
+
+                  {savedAddresses.length > 0 && (
+                    <div className="mb-10 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Saved Addresses</p>
+                        <Link to="/dashboard" className="text-[10px] font-black uppercase tracking-widest text-primary hover:underline underline-offset-4">Manage</Link>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {savedAddresses.map((address) => (
+                          <button
+                            key={address.id}
+                            type="button"
+                            onClick={() => setSelectedAddressId(address.id)}
+                            className={`text-left p-6 rounded-3xl border-2 transition-all ${
+                              selectedAddressId === address.id
+                                ? "border-primary bg-primary/5 shadow-xl shadow-primary/10"
+                                : "border-gray-100 bg-white hover:border-gray-300"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-xs font-black italic text-gray-900 flex items-center gap-2">
+                                <MapPin size={14} className="text-primary" /> {address.label}
+                              </span>
+                              {selectedAddressId === address.id && <CheckCircle2 size={16} className="text-primary" />}
+                            </div>
+                            <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">{address.full_name} · {address.phone}</p>
+                            <p className="text-xs font-bold text-gray-600 mt-1 leading-relaxed">{addressLine(address)}</p>
+                          </button>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => setSelectedAddressId("new")}
+                          className={`text-left p-6 rounded-3xl border-2 border-dashed transition-all flex items-center gap-4 ${
+                            selectedAddressId === "new"
+                              ? "border-primary bg-primary/5 shadow-xl shadow-primary/10"
+                              : "border-gray-200 bg-white hover:border-gray-300"
+                          }`}
+                        >
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${selectedAddressId === "new" ? "bg-primary text-white" : "bg-gray-50 text-gray-400"}`}>
+                            <Plus size={18} />
+                          </div>
+                          <div>
+                            <p className="text-xs font-black italic text-gray-900">Use a new address</p>
+                            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">Enter a different destination</p>
+                          </div>
+                        </button>
+                      </div>
                     </div>
-                    <div>
-                       <InputLabel>Artisan Email</InputLabel>
-                       <CheckoutInput type="email" name="email" value={shippingInfo.email} onChange={handleInputChange} placeholder="email@address.com" />
-                    </div>
-                    <div>
-                       <InputLabel>Phone Identity</InputLabel>
-                       <CheckoutInput type="tel" name="phone" value={shippingInfo.phone} onChange={handleInputChange} placeholder="09XX XXX XXXX" />
-                    </div>
-                    <div className="md:col-span-2">
-                       <InputLabel>Heritage Address</InputLabel>
-                       <textarea
-                         name="address"
-                         value={shippingInfo.address}
-                         onChange={handleInputChange}
-                         rows={2}
-                         className="w-full px-6 py-4 border border-gray-100 bg-gray-50 rounded-2xl focus:ring-2 focus:ring-primary focus:bg-white transition-all outline-none font-bold text-sm"
-                         placeholder="House No., Street, Barangay"
-                       />
-                    </div>
-                    <div>
-                       <InputLabel>City / Municipality</InputLabel>
-                       <CheckoutInput name="city" value={shippingInfo.city} onChange={handleInputChange} placeholder="Legazpi City" />
-                    </div>
-                    <div>
-                       <InputLabel>Province</InputLabel>
-                       <CheckoutInput name="province" value={shippingInfo.province} onChange={handleInputChange} placeholder="Albay" />
-                    </div>
-                    <div>
-                       <InputLabel>Zip Code</InputLabel>
-                       <CheckoutInput name="zipCode" value={shippingInfo.zipCode} onChange={handleInputChange} placeholder="4501" />
-                    </div>
-                  </div>
+                  )}
+
+                  {!usingSavedAddress && (
+                    <>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="md:col-span-2">
+                          <InputLabel>Full Artisan Name</InputLabel>
+                          <CheckoutInput name="fullName" value={shippingInfo.fullName} onChange={handleInputChange} placeholder="Juan Dela Cruz" />
+                        </div>
+                        <div>
+                          <InputLabel>Artisan Email</InputLabel>
+                          <CheckoutInput type="email" name="email" value={shippingInfo.email} onChange={handleInputChange} placeholder="email@address.com" />
+                        </div>
+                        <div>
+                          <InputLabel>Phone Identity</InputLabel>
+                          <CheckoutInput type="tel" name="phone" value={shippingInfo.phone} onChange={handleInputChange} placeholder="09XX XXX XXXX" />
+                        </div>
+                        <div className="md:col-span-2">
+                          <InputLabel>Heritage Address</InputLabel>
+                          <textarea
+                            name="address"
+                            value={shippingInfo.address}
+                            onChange={handleInputChange}
+                            rows={2}
+                            className="w-full px-6 py-4 border border-gray-100 bg-gray-50 rounded-2xl focus:ring-2 focus:ring-primary focus:bg-white transition-all outline-none font-bold text-sm"
+                            placeholder="House No., Street, Barangay"
+                          />
+                        </div>
+                        <div>
+                          <InputLabel>City / Municipality</InputLabel>
+                          <CheckoutInput name="city" value={shippingInfo.city} onChange={handleInputChange} placeholder="Legazpi City" />
+                        </div>
+                        <div>
+                          <InputLabel>Province</InputLabel>
+                          <CheckoutInput name="province" value={shippingInfo.province} onChange={handleInputChange} placeholder="Albay" />
+                        </div>
+                        <div>
+                          <InputLabel>Zip Code</InputLabel>
+                          <CheckoutInput name="zipCode" value={shippingInfo.zipCode} onChange={handleInputChange} placeholder="4501" />
+                        </div>
+                      </div>
+
+                      <label className="mt-8 flex items-center gap-3 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={saveNewAddress}
+                          onChange={(e) => setSaveNewAddress(e.target.checked)}
+                          className="w-5 h-5 rounded-md border-gray-200 text-primary focus:ring-primary"
+                        />
+                        <span className="text-[10px] font-black uppercase tracking-widest text-gray-500">Save this address to my address book</span>
+                      </label>
+                      {saveNewAddress && (
+                        <div className="mt-4">
+                          <InputLabel>Address Label</InputLabel>
+                          <CheckoutInput value={newAddressLabel} onChange={(e) => setNewAddressLabel(e.target.value)} placeholder="Home / Studio / Parents" />
+                        </div>
+                      )}
+                    </>
+                  )}
+
                   <button 
                     onClick={() => setStep(2)}
                     className="w-full mt-10 bg-gray-900 text-white py-5 rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-gray-800 transition-all shadow-xl shadow-gray-200"
