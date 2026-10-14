@@ -86,4 +86,5 @@ All paths verified against `server/` route registrations (`server/routes/*.ts`, 
 | PUT/DELETE | `/api/admin/promo-codes/:id` | update (same validation; `expires_at: null`/`usage_limit: null` clears; `used_count` server-managed) / hard delete (past orders keep `discount_amount`) |
 
 Count: ~45 `/api/*` route registrations (62 `app.*` matches include static/PWA fallbacks).
-No pagination anywhere; list endpoints return full sets.
+Paginated: `GET /api/products` (catalog mode), `GET /api/stores` (paged mode),
+`GET /api/admin/orders`; all other list endpoints return full sets.

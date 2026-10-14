@@ -14,10 +14,10 @@
 server.ts                  # thin bootstrap (initDb + seed + createApp + listen)
 server/
   config.ts                # PORT/DB_* env + business constants
-  db.ts                    # pool singleton + initDb DDL (12 tables)
-  seed.ts                  # seedData (users, catalog, orders)
+  db.ts                    # pool singleton + initDb DDL (13 tables)
+  seed.ts                  # seedData (users, catalog, orders, WELCOME10 voucher)
   auth.ts                  # getAuthenticatedUser + requireAuth/isSeller/isAdmin
-  utils.ts                 # asyncHandler, error middleware, limit/days parsers
+  utils.ts                 # asyncHandler, error middleware, limit/page/days parsers
   app.ts                   # Express factory (routes + Vite/static + error handler)
   routes/                  # public, auth, cart, orders, seller, admin
 src/
@@ -25,7 +25,7 @@ src/
   main.tsx                 # React mount
   constants.ts / types.ts
   context/AuthContext.tsx  # login/register/logout/me, localStorage token
-  services/api.ts          # fetch wrapper (Bearer header) + ~40 endpoint methods
+  services/api.ts          # fetch wrapper (Bearer header) + ~45 endpoint methods
   pages/                   # Home, Products, ProductDetail, Stores, StoreDetail,
                            # Cart, Checkout, About, Contact, Login, Register,
                            # Dashboards (customer), OrderTracking, NotFound,
@@ -56,16 +56,16 @@ scripts/                   # generate-icons.mjs, generate-screenshots.mjs (PWA a
 | File | Contents |
 |---|---|
 | `config.ts` | `PORT` (default 3000), DB env reads (`DB_HOST/PORT/USER/PASS/NAME`), business constants, `MAX_LIST_LIMIT`, `SESSION_TTL_MS` |
-| `db.ts` | Pool singleton + DDL: 12 `CREATE TABLE IF NOT EXISTS` + idempotent `UNIQUE(product_id, user_id)` on `reviews` + expired-session purge |
-| `seed.ts` | `seedData()`: 6 users, 4 categories, 8 sizes, 15 products, inventory, 10 reviews, 12 orders + history |
+| `db.ts` | Pool singleton + DDL: 13 `CREATE TABLE IF NOT EXISTS` (+ idempotent `orders.promo_code_id`/`discount_amount` columns, no FK) + idempotent `UNIQUE(product_id, user_id)` on `reviews` + expired-session purge |
+| `seed.ts` | `seedData()`: 6 users, 4 categories, 8 sizes, 15 products, inventory, 10 reviews, 12 orders + history, `WELCOME10` promo |
 | `app.ts` | `createApp()`, `express.json()`, route registration, Vite-middleware (dev) vs `dist/` static + SPA fallback (prod); no permissive CORS |
 | `auth.ts` | `getAuthenticatedUser` + `requireAuth`/`isSeller`/`isAdmin` middleware |
-| `routes/public.ts` | Health, products (validated/inlined LIMIT), categories, sizes, stores |
+| `routes/public.ts` | Health, products (search/sort/pagination with back-compat bare array), categories, sizes, stores (search/pagination) |
 | `routes/auth.ts` | Login/register/me/logout (role allowlist, email+password validation) |
-| `routes/cart.ts` | Cart ×4 + checkout transaction |
-| `routes/orders.ts` | orders/my, orders/details, verified one-per-user reviews, simulate, restocking cancel, payment/history |
-| `routes/seller.ts` | Seller dashboard, products CRUD, reports, reviews, orders + payment confirmation, profile |
-| `routes/admin.ts` | Analytics + admin dashboard, users, reports, categories, sizes, order payment confirmation |
+| `routes/cart.ts` | Cart ×4 + checkout transaction (optional promo discount, shipping on discounted subtotal) |
+| `routes/orders.ts` | orders/my, orders/details (+discount/promo), verified one-per-user reviews, simulate, restocking cancel, return requests, payment/history |
+| `routes/seller.ts` | Seller dashboard, products CRUD, reports, reviews, orders + payment confirmation + return approvals, profile |
+| `routes/admin.ts` | Analytics + admin dashboard, users, reports, categories, sizes, order payment confirmation, orders list/detail, promo CRUD |
 | `server.ts` | Thin bootstrap only (~19 lines) |
 
 ## Frontend ↔ backend contract
@@ -73,4 +73,6 @@ scripts/                   # generate-icons.mjs, generate-screenshots.mjs (PWA a
 `src/services/api.ts` is the single client: `API_BASE_URL = "/api"`, same-origin
 fetch, `Authorization: Bearer <soletrack_token>` from `localStorage`, JSON-only
 handling (non-JSON → generic error). Every method maps 1:1 to a server route —
-see `api-reference.md`. No pagination, no retry, no refresh logic.
+see `api-reference.md`. Paginated endpoints return
+`{items, page, total_pages, total_items}`, normalized client-side by
+`normalizeList` (which also accepts bare arrays); no retry, no refresh logic.

@@ -1,6 +1,6 @@
 # Data Model
 
-12 tables, created with `CREATE TABLE IF NOT EXISTS` in `initDb()` (`server/db.ts`),
+13 tables, created with `CREATE TABLE IF NOT EXISTS` in `initDb()` (`server/db.ts`),
 seeded in `server/seed.ts`. InnoDB/utf8mb4. `orders.status` / `payment_status` are free-form `VARCHAR` (no ENUM).
 
 ```mermaid
@@ -21,6 +21,7 @@ erDiagram
     sizes ||--o{ order_items : "size_id?"
     orders ||--o{ order_items : "order_id"
     orders ||--o{ order_status_history : "order_id"
+    promo_codes ||--o{ orders : "promo_code_id?"
 ```
 
 ## Tables (DDL summary)
@@ -48,16 +49,26 @@ erDiagram
 - **cart_items** (`cart_item_id` PK): `user_id`, `product_id`, `size_id` NULL,
   `quantity`, `created_at`. Uniqueness is application-level (upsert query), no DB constraint.
 - **orders** (`order_id` PK): `user_id`, `total_amount`, `shipping_fee`,
-  `status` default `'pending'` (pending/confirmed/shipped/delivered/cancelled by convention),
+  `status` default `'pending'` (pending/confirmed/shipped/delivered/cancelled by
+  convention, plus `requested`/`approved` for the returns flow),
   `payment_status` default `'unpaid'` (`unpaid` initial; owning seller or any admin
-  may mark `paid`/`refunded`, idempotent on re-mark), `shipping_address TEXT`,
+  may mark `paid`/`refunded`, idempotent on re-mark; return approval sets
+  `refunded`), `promo_code_id` NULL (no FK — promos stay deletable),
+  `discount_amount DECIMAL(10,2)` default `0`, `shipping_address TEXT`,
   `payment_method`, `created_at`. Seed: 12 orders for the demo customer.
 - **order_items** (`order_item_id` PK): `order_id`, `product_id`, `size_id` NULL,
   `quantity`, `price_at_purchase` (snapshot).
 - **order_status_history** (`history_id` PK): `order_id`, `status`, `created_at`.
-  Carries both lifecycle transitions (`pending` → … → `delivered`/`cancelled`)
+  Carries both lifecycle transitions (`pending` → … → `delivered`/`cancelled`,
+  plus `requested` → `approved` for returns)
   and payment markers (`paid`/`refunded`); readers that match step names
   (e.g. order tracking) ignore the payment rows.
+- **promo_codes** (`promo_code_id` PK): `code VARCHAR(50)` UNIQUE (stored
+  uppercase), `discount_type ENUM('percent','fixed')`, `discount_value
+  DECIMAL(10,2)`, `min_subtotal` default `0`, `expires_at` NULL (never expires),
+  `usage_limit` NULL (unlimited), `used_count` default `0` (incremented once per
+  discounted order inside the checkout transaction), `is_active`, `created_at`.
+  Seed: `WELCOME10` (10% off, no minimum, 500 uses, expires in a year).
 - **sessions** (`token VARCHAR(64)` PK): `user_id` (CASCADE), `expires_at`, `created_at`.
   Token = 64 hex chars (`crypto.randomBytes(32)`), 24h TTL, purged when expired.
 
