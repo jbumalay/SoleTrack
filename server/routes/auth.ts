@@ -4,7 +4,7 @@ import crypto from "crypto";
 import { getPool } from "../db";
 import { SESSION_TTL_MS } from "../config";
 import { getAuthenticatedUser } from "../auth";
-import { asyncHandler } from "../utils";
+import { asyncHandler, mapDbError } from "../utils";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 /** Registration may only create customer/seller accounts — never admin. */
@@ -123,10 +123,9 @@ export function registerAuthRoutes(app: Express): void {
 
         res.json({ status: "success", data: { ...userInfo, token } });
       } catch (error: unknown) {
-        console.error("Registration error:", error instanceof Error ? error.message : "unknown");
-        res
-          .status(400)
-          .json({ status: "error", message: error instanceof Error ? error.message : "Registration failed" });
+        console.error("Registration failed");
+        const mapped = mapDbError(error, "Registration failed");
+        res.status(mapped.http).json({ status: "error", message: mapped.message });
       }
     })
   );

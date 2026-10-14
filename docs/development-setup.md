@@ -28,7 +28,7 @@ Copy-Item .env.example .env
 ## 2. Install / run / build
 
 ```powershell
-npm install     # also generates package-lock.json (none committed yet)
+npm install     # package-lock.json is tracked; changes only via npm install/uninstall
 npm run dev     # tsx server.ts → :3000, bootstraps DB + seeds (safe to re-run; seed is idempotent-ish)
 npm run lint    # tsc --noEmit
 npm run build   # vite build + esbuild server → dist/

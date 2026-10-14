@@ -308,11 +308,13 @@ export function registerSellerRoutes(app: Express): void {
               if (!Number.isInteger(invId) || invId <= 0) {
                 throw new Error("Invalid inventory entry");
               }
-              await conn.execute("UPDATE inventory SET stock_quantity = ? WHERE inventory_id = ? AND product_id = ?", [
-                stock,
-                invId,
-                productId,
-              ]);
+              const [invUpd] = (await conn.execute(
+                "UPDATE inventory SET stock_quantity = ? WHERE inventory_id = ? AND product_id = ?",
+                [stock, invId, productId]
+              )) as unknown as [{ affectedRows: number }, unknown];
+              if (invUpd.affectedRows === 0) {
+                throw new Error("Invalid inventory entry");
+              }
             } else {
               if (sizeId === null || !Number.isInteger(sizeId) || sizeId <= 0) {
                 throw new Error("Invalid size for inventory entry");
@@ -556,25 +558,15 @@ export function registerSellerRoutes(app: Express): void {
       const conn = await pool.getConnection();
       try {
         await conn.beginTransaction();
-        const [orderRows] = (await conn.execute("SELECT status FROM orders WHERE order_id = ? FOR UPDATE", [
-          orderId,
-        ])) as unknown as [Array<{ status: string }>, unknown];
+        const [orderRows] = (await conn.execute(
+          "SELECT status, payment_status FROM orders WHERE order_id = ? FOR UPDATE",
+          [orderId]
+        )) as unknown as [Array<{ status: string; payment_status: string }>, unknown];
         const order = orderRows[0];
 
         if (!order) {
           await conn.rollback();
           res.status(404).json({ status: "error", message: "Order not found" });
-          return;
-        }
-
-        const allowed = NEXT_STATUS[order.status] ?? [];
-        if (!allowed.includes(next)) {
-          await conn.rollback();
-          if (order.status === "delivered" || order.status === "cancelled") {
-            res.status(400).json({ status: "error", message: `Cannot update status of a ${order.status} order` });
-          } else {
-            res.status(400).json({ status: "error", message: `Cannot change status from ${order.status} to ${next}` });
-          }
           return;
         }
 
@@ -592,6 +584,31 @@ export function registerSellerRoutes(app: Express): void {
           return;
         }
 
+        const allowed = NEXT_STATUS[order.status] ?? [];
+        if (!allowed.includes(next)) {
+          await conn.rollback();
+          if (order.status === "delivered" || order.status === "cancelled") {
+            res.status(400).json({ status: "error", message: `Cannot update status of a ${order.status} order` });
+          } else {
+            res.status(400).json({ status: "error", message: `Cannot change status from ${order.status} to ${next}` });
+          }
+          return;
+        }
+
+        if (next === "cancelled") {
+          const [lines] = (await conn.execute(
+            "SELECT product_id, size_id, quantity FROM order_items WHERE order_id = ?",
+            [orderId]
+          )) as unknown as [Array<{ product_id: number; size_id: number | null; quantity: number }>, unknown];
+          for (const line of lines) {
+            await conn.execute(
+              `UPDATE inventory SET stock_quantity = stock_quantity + ?
+               WHERE product_id = ? AND (size_id = ? OR (size_id IS NULL AND ? IS NULL)) AND deleted_at IS NULL`,
+              [line.quantity, line.product_id, line.size_id, line.size_id]
+            );
+          }
+        }
+
         const [upd] = (await conn.execute(
           `UPDATE orders SET status = ? WHERE order_id = ? AND EXISTS(
              SELECT 1 FROM order_items oi JOIN products p ON oi.product_id = p.product_id
@@ -605,6 +622,10 @@ export function registerSellerRoutes(app: Express): void {
           return;
         }
         await conn.execute("INSERT INTO order_status_history (order_id, status) VALUES (?, ?)", [orderId, next]);
+        if (next === "cancelled" && order.payment_status === "paid") {
+          await conn.execute("UPDATE orders SET payment_status = 'refunded' WHERE order_id = ?", [orderId]);
+          await conn.execute("INSERT INTO order_status_history (order_id, status) VALUES (?, 'refunded')", [orderId]);
+        }
         await conn.commit();
         res.json({ status: "success", message: `Order status updated to ${next}` });
       } catch {
@@ -655,12 +676,6 @@ export function registerSellerRoutes(app: Express): void {
           return;
         }
 
-        if (order.payment_status === next) {
-          await conn.rollback();
-          res.json({ status: "success", message: `Order already marked as ${next}` });
-          return;
-        }
-
         const [hasItemsRows] = (await conn.execute(
           `
           SELECT 1 FROM order_items oi JOIN products p ON oi.product_id = p.product_id
@@ -672,6 +687,12 @@ export function registerSellerRoutes(app: Express): void {
         if (hasItemsRows.length === 0) {
           await conn.rollback();
           res.status(403).json({ status: "error", message: "Access denied or order not found" });
+          return;
+        }
+
+        if (order.payment_status === next) {
+          await conn.rollback();
+          res.json({ status: "success", message: `Order already marked as ${next}` });
           return;
         }
 
@@ -720,18 +741,14 @@ export function registerSellerRoutes(app: Express): void {
       const conn = await pool.getConnection();
       try {
         await conn.beginTransaction();
-        const [orderRows] = (await conn.execute("SELECT status FROM orders WHERE order_id = ? FOR UPDATE", [
-          orderId,
-        ])) as unknown as [Array<{ status: string }>, unknown];
+        const [orderRows] = (await conn.execute(
+          "SELECT status, payment_status FROM orders WHERE order_id = ? FOR UPDATE",
+          [orderId]
+        )) as unknown as [Array<{ status: string; payment_status: string }>, unknown];
         const order = orderRows[0];
         if (!order) {
           await conn.rollback();
           res.status(404).json({ status: "error", message: "Order not found" });
-          return;
-        }
-        if (order.status !== "requested") {
-          await conn.rollback();
-          res.status(400).json({ status: "error", message: "Only requested returns can be approved" });
           return;
         }
 
@@ -747,6 +764,11 @@ export function registerSellerRoutes(app: Express): void {
           res.status(403).json({ status: "error", message: "Access denied or order not found" });
           return;
         }
+        if (order.status !== "requested") {
+          await conn.rollback();
+          res.status(400).json({ status: "error", message: "Only requested returns can be approved" });
+          return;
+        }
 
         const [lines] = (await conn.execute(
           "SELECT product_id, size_id, quantity FROM order_items WHERE order_id = ?",
@@ -760,15 +782,15 @@ export function registerSellerRoutes(app: Express): void {
           );
         }
 
-        await conn.execute(
-          `UPDATE orders SET status = 'approved', payment_status = 'refunded' WHERE order_id = ?`,
-          [orderId]
-        );
+        await conn.execute(`UPDATE orders SET status = 'approved' WHERE order_id = ?`, [orderId]);
         await conn.execute("INSERT INTO order_status_history (order_id, status) VALUES (?, 'approved')", [orderId]);
-        await conn.execute("INSERT INTO order_status_history (order_id, status) VALUES (?, 'refunded')", [orderId]);
+        if (order.payment_status === "paid") {
+          await conn.execute("UPDATE orders SET payment_status = 'refunded' WHERE order_id = ?", [orderId]);
+          await conn.execute("INSERT INTO order_status_history (order_id, status) VALUES (?, 'refunded')", [orderId]);
+        }
 
         await conn.commit();
-        res.json({ status: "success", message: "Return approved and refunded" });
+        res.json({ status: "success", message: "Return approved" });
       } catch {
         try {
           await conn.rollback();

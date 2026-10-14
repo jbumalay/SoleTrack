@@ -10,7 +10,7 @@ flowchart TB
     Express["Express (server.ts + server/)\nREST /api/* · auth · static/Vite"]
     Vite["Vite middleware (dev only)"]
     Dist["dist/ static (prod only)"]
-    MySQL[("MySQL/MariaDB\nsoletrack_node · 12 tables")]
+    MySQL[("MySQL/MariaDB\nsoletrack_node · 13 tables")]
 
     Browser <-->|"/api/* JSON (Bearer token)"| Express
     Browser <-->|"/ (HTML/JS/CSS)"| Express
@@ -21,7 +21,7 @@ flowchart TB
 
 ## Request pipeline (per process)
 
-1. `server.ts` → `initDb()` (bootstrap DB → `CREATE TABLE IF NOT EXISTS` ×12 → `seedData()`).
+1. `server.ts` → `initDb()` (bootstrap DB → `CREATE TABLE IF NOT EXISTS` ×13 → `seedData()`).
 2. No permissive CORS middleware — same-origin serving in both modes (`server/app.ts`); cross-origin denied by default.
 3. `app.use(express.json())`.
 4. `/api/*` routes (public catalog → auth-gated cart/orders → `isSeller`/`isAdmin` branches), every handler wrapped in `asyncHandler` + central JSON error middleware.
@@ -52,7 +52,9 @@ and at bootstrap. Session lifetime: 24h. No cookies, no refresh tokens.
 
 - **Public:** `/api/health`, products, categories, sizes, stores.
 - **Authenticated** (`getAuthenticatedUser`, `server/auth.ts`): cart, checkout,
-  orders/my, orders/details (owner/seller/admin-scoped), reviews, payment/history.
+  orders/my, orders/details (owner / owning-seller / admin), reviews (active accounts only),
+  cancel/return (owner + active). `orders/details` allows the owning seller;
+  `payment/history` is owner-or-admin only.
 - **`isSeller`** (`server/auth.ts`): role `seller` **and** `status === 'active'`.
   New seller registrations are `pending_approval` → blocked until admin activates.
 - **`isAdmin`** (`server/auth.ts`): role `admin` only. Registration rejects `admin` role (allowlist `customer|seller`).
@@ -61,10 +63,21 @@ and at bootstrap. Session lifetime: 24h. No cookies, no refresh tokens.
 
 - Checkout is transactional (`BEGIN` → stock check → insert order/items/history →
   decrement inventory with `stock_quantity >= ?` guard → clear cart → `COMMIT`;
-  rollback on any failure).
-- Cancel is transactional too (customer-owned, `pending`/`confirmed` only):
+  rollback on any failure). An optional `promo_code` is validated (`FOR UPDATE`
+  row lock; unknown/inactive/expired/over-limit/under-minimum → 400) and the
+  discount applied before the shipping threshold is evaluated, so shipping is
+  computed on the discounted subtotal; `used_count` increments once in the same
+  transaction via a guarded `UPDATE`.
+- Cancel is transactional too (customer-owned and active, `pending`/`confirmed` only):
   reread `order_items`, restock each line into `inventory`, then set
-  `cancelled` + history row; terminal states reject with 400.
+  `cancelled` + history row (+ `refunded` row when the order was `paid`);
+  terminal and in-return states reject with 400. Seller-cancel follows the
+  same restock/refund path.
+- Returns extend the lifecycle (`delivered` → `requested` → `approved`): the
+  customer requests on a `delivered` order; the owning seller approves, which
+  restocks each line (same logic as cancel) and appends `approved` (+ `refunded`
+  only when the order was `paid`) — all one transaction.
+  `simulate`/`cancel`/seller-status routes reject `requested`/`approved` orders.
 - Payment confirmation is transactional (`paid`/`refunded` allowlist): the
   owning seller (own-item check, 403 otherwise) or any admin marks the order;
   re-marking the same value succeeds idempotently without a duplicate
@@ -77,5 +90,13 @@ and at bootstrap. Session lifetime: 24h. No cookies, no refresh tokens.
   categories/sizes are hard-deleted with in-use guards.
 - PWA service worker caches catalog GETs (`NetworkFirst`, 10s timeout, 24h TTL) —
   fresh data when online, cache fallback offline; see `security-assessment.md`.
-- `order_status_history` carries both lifecycle transitions and payment
+- Catalog reads are server-paged: `GET /api/products` accepts `search` (name/
+  description/brand `LIKE`), `sort` (`newest|price_asc|price_desc|rating`),
+  `page`/`limit` (defaults 1/12, max 100) and returns
+  `{items, page, total_pages, total_items}` — but only when a catalog-mode
+  param (`search`/`sort`/`page`) is sent; legacy `category`/`seller_id`/`limit`
+  calls keep the bare-array shape. `GET /api/stores` pages the same way on
+  `search`/`page`/`limit`.
+- `order_status_history` carries lifecycle transitions (including
+  `requested`/`approved`) and payment
   markers (`paid`/`refunded`); step-matching readers ignore the payment rows.

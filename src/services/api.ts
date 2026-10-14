@@ -25,13 +25,14 @@ export const apiService = {
   async request<T = any>(endpoint: string, options: RequestInit = {}): Promise<ApiResponse<T>> {
     const token = localStorage.getItem("soletrack_token");
     try {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        ...(options.headers as Record<string, string> | undefined),
+      };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
       const response = await fetch(`${API_BASE_URL}${endpoint}`, {
         ...options,
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": token ? `Bearer ${token}` : "",
-          ...options.headers,
-        },
+        headers,
       });
 
       const contentType = response.headers.get("content-type");
@@ -96,7 +97,7 @@ export const apiService = {
       cleaned[k] = String(v);
     }
     const query = new URLSearchParams(cleaned).toString();
-    return this.request(`/products?${query}`);
+    return this.request(query ? `/products?${query}` : "/products");
   },
 
   async getCategories(): Promise<ApiResponse<any>> {
@@ -160,6 +161,12 @@ export const apiService = {
     });
   },
 
+  async requestReturn(orderId: number): Promise<ApiResponse<any>> {
+    return this.request(`/orders/return?id=${orderId}`, {
+      method: "POST",
+    });
+  },
+
   /**
    * Payment methods
    */
@@ -181,7 +188,7 @@ export const apiService = {
       cleaned[k] = String(v);
     }
     const query = new URLSearchParams(cleaned).toString();
-    return this.request(`/admin/users?${query}`);
+    return this.request(query ? `/admin/users?${query}` : "/admin/users");
   },
 
   async createAdminUser(userData: unknown): Promise<ApiResponse<any>> {
@@ -235,7 +242,6 @@ export const apiService = {
   async getAdminSizes(): Promise<ApiResponse<any>> {
     return this.request("/admin/sizes");
   },
-
   async createAdminSize(data: unknown): Promise<ApiResponse<any>> {
     return this.request("/admin/sizes", {
       method: "POST",
@@ -305,6 +311,20 @@ export const apiService = {
     });
   },
 
+  async markSellerOrderPayment(orderId: number, payment_status: string): Promise<ApiResponse<any>> {
+    return this.request("/seller/orders/payment", {
+      method: "PUT",
+      body: JSON.stringify({ order_id: orderId, payment_status })
+    });
+  },
+
+  async approveSellerReturn(orderId: number): Promise<ApiResponse<any>> {
+    return this.request("/seller/orders/return", {
+      method: "PUT",
+      body: JSON.stringify({ order_id: orderId })
+    });
+  },
+
   async createReview(data: { product_id: number; rating: number; comment: string }): Promise<ApiResponse<any>> {
     return this.request("/reviews", {
       method: "POST",
@@ -336,6 +356,51 @@ export const apiService = {
     return this.request("/seller/profile", {
       method: "PUT",
       body: JSON.stringify(data),
+    });
+  },
+
+  async getAdminOrders(params: PaginatedParams & { status?: string } = {}): Promise<ApiResponse<any>> {
+    const cleaned: Record<string, string> = {};
+    for (const [k, v] of Object.entries(params)) {
+      if (v === undefined || v === null || v === "") continue;
+      cleaned[k] = String(v);
+    }
+    const query = new URLSearchParams(cleaned).toString();
+    return this.request(query ? `/admin/orders?${query}` : "/admin/orders");
+  },
+
+  async getAdminOrder(id: number): Promise<ApiResponse<any>> {
+    return this.request(`/admin/orders/${id}`);
+  },
+
+  async markAdminOrderPayment(orderId: number, payment_status: string): Promise<ApiResponse<any>> {
+    return this.request("/admin/orders/payment", {
+      method: "PUT",
+      body: JSON.stringify({ order_id: orderId, payment_status }),
+    });
+  },
+
+  async getAdminPromoCodes(): Promise<ApiResponse<any>> {
+    return this.request("/admin/promo-codes");
+  },
+
+  async createAdminPromoCode(data: unknown): Promise<ApiResponse<any>> {
+    return this.request("/admin/promo-codes", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  },
+
+  async updateAdminPromoCode(id: number, data: unknown): Promise<ApiResponse<any>> {
+    return this.request(`/admin/promo-codes/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  },
+
+  async deleteAdminPromoCode(id: number): Promise<ApiResponse<any>> {
+    return this.request(`/admin/promo-codes/${id}`, {
+      method: "DELETE",
     });
   },
 };

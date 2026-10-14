@@ -38,14 +38,16 @@ export function registerCartRoutes(app: Express): void {
       const user = (req as AuthedRequest).user!;
       const { product_id, quantity, size_id } = req.body ?? {};
 
-      const productId = Number(product_id);
-      const qty = Number(quantity);
-      const sizeId = size_id === undefined || size_id === null || size_id === "" ? null : Number(size_id);
-      if (!Number.isInteger(productId) || productId <= 0 || !Number.isInteger(qty) || qty < 1 || qty > 99) {
+      const productId = parseId(product_id);
+      const sizeId =
+        size_id === undefined || size_id === null || size_id === "" ? null : parseId(size_id);
+      const qty =
+        typeof quantity === "boolean" ? NaN : typeof quantity === "number" ? quantity : Number(quantity);
+      if (productId === null || !Number.isInteger(qty) || qty < 1 || qty > 99) {
         res.status(400).json({ status: "error", message: "Invalid product or quantity" });
         return;
       }
-      if (sizeId !== null && (!Number.isInteger(sizeId) || sizeId <= 0)) {
+      if (size_id !== undefined && size_id !== null && size_id !== "" && sizeId === null) {
         res.status(400).json({ status: "error", message: "Invalid size" });
         return;
       }
@@ -354,7 +356,7 @@ export function registerCartRoutes(app: Express): void {
           // ignore
         }
         console.error("Checkout failed");
-        res.status(400).json({ status: "error", message: "Checkout failed" });
+        res.status(500).json({ status: "error", message: "Checkout failed" });
       } finally {
         conn.release();
       }
