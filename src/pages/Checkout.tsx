@@ -6,6 +6,7 @@ import { apiService } from "@/services/api";
 import { CartItem } from "@/types";
 import { useAuth } from "@/context/AuthContext";
 import { SHIPPING_THRESHOLD, SHIPPING_FEE } from "@/constants";
+import { toast } from "sonner";
 
 export function Checkout() {
   const navigate = useNavigate();
@@ -41,16 +42,22 @@ export function Checkout() {
       try {
         const response = await apiService.getCart();
         if (response.status === "success") {
-          setCartItems(response.data.items || []);
+          setCartItems((response.data.items as CartItem[] | undefined) ?? []);
         }
-      } catch (error) {
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : "Failed to fetch cart";
+        if (message.includes("401") || message.toLowerCase().includes("unauthor")) {
+          navigate("/login?redirect=%2Fcheckout");
+          return;
+        }
+        toast.error(message);
         console.error("Failed to fetch cart:", error);
       } finally {
         setLoading(false);
       }
     }
     fetchCart();
-  }, []);
+  }, [navigate]);
 
   const subtotal = cartItems.reduce((sum, item) => sum + (Number(item.price) * item.quantity), 0);
   const shipping = subtotal > SHIPPING_THRESHOLD ? 0 : SHIPPING_FEE;
@@ -62,13 +69,13 @@ export function Checkout() {
 
   const handlePlaceOrder = async () => {
     if (!selectedPayment) {
-      alert("Please select a payment method");
+      toast.error("Please select a payment method");
       return;
     }
     const requiredFields = ["fullName", "email", "phone", "address", "city", "province", "zipCode"];
     const missingFields = requiredFields.filter(field => !shippingInfo[field as keyof typeof shippingInfo]);
     if (missingFields.length > 0) {
-      alert("Please fill in all shipping information fields");
+      toast.error("Please fill in all shipping information fields");
       return;
     }
 
@@ -86,8 +93,8 @@ export function Checkout() {
         setOrderComplete(true);
         await refreshCart();
       }
-    } catch (error: any) {
-      alert(error.message || "Failed to place order");
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : "Failed to place order");
     } finally {
       setIsProcessing(false);
     }

@@ -63,7 +63,8 @@
 
 ## 4. Auth journey
 
-Register (any role string accepted — see security note) or login →
+Register (`role` allowlisted to `customer`/`seller`; `admin` → 400; missing/short
+password → 400; inactive-status accounts → 403) or login →
 `bcrypt.compare` → `crypto.randomBytes(32)` hex token + 24h expiry row in `sessions` →
 token returned in body → `AuthContext` stores in `localStorage` →
 every `apiService.request` attaches `Authorization: Bearer`. `GET /api/auth/me`

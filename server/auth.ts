@@ -57,6 +57,10 @@ export const requireAuth: RequestHandler = async (
       res.status(401).json({ status: "error", message: "Login required" });
       return;
     }
+    if (user.status !== "active") {
+      res.status(403).json({ status: "error", message: "Account inactive" });
+      return;
+    }
     (req as AuthedRequest).user = user;
     next();
   } catch (err) {
@@ -89,6 +93,10 @@ export const isAdmin: RequestHandler = async (
 ): Promise<void> => {
   try {
     const user = await getAuthenticatedUser(req);
+    if (user && user.status !== "active") {
+      res.status(403).json({ status: "error", message: "Account inactive" });
+      return;
+    }
     if (user && user.role === "admin") {
       (req as AuthedRequest).user = user;
       next();

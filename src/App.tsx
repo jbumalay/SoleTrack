@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route } from "react-router";
 import { AuthProvider } from "./context/AuthContext";
 import { Layout } from "./components/Layout";
+import { ProtectedRoute, RequireRole, RedirectIfAuthed } from "./components/RequireAuth";
 import { Home } from "./pages/Home";
 import { Products } from "./pages/Products";
 import { ProductDetail } from "./pages/ProductDetail";
@@ -47,33 +48,44 @@ export default function App() {
               <Route path="product/:id" element={<ProductDetail />} />
               <Route path="stores" element={<Stores />} />
               <Route path="store/:id" element={<StoreDetail />} />
-              <Route path="cart" element={<Cart />} />
-              <Route path="checkout" element={<Checkout />} />
               <Route path="about" element={<About />} />
               <Route path="contact" element={<Contact />} />
-              <Route path="login" element={<Login />} />
-              <Route path="register" element={<Register />} />
-              <Route path="dashboard" element={<CustomerDashboard />} />
-              <Route path="order-tracking/:id" element={<OrderTracking />} />
+              <Route path="login" element={<RedirectIfAuthed><Login /></RedirectIfAuthed>} />
+              <Route path="register" element={<RedirectIfAuthed><Register /></RedirectIfAuthed>} />
+              {/* Customer-protected */}
+              <Route element={<RequireRole role="customer" />}>
+                <Route path="cart" element={<Cart />} />
+                <Route path="checkout" element={<Checkout />} />
+                <Route path="dashboard" element={<CustomerDashboard />} />
+              </Route>
+              {/* Any authed user (backend enforces order ownership: buyer, selling seller, or admin) */}
+              <Route element={<ProtectedRoute />}>
+                <Route path="orders" element={<CustomerDashboard />} />
+                <Route path="order-tracking/:id" element={<OrderTracking />} />
+              </Route>
               <Route path="*" element={<NotFound />} />
             </Route>
 
             {/* Admin Branch */}
-            <Route path="/admin" element={<AdminLayout />}>
-              <Route index element={<AdminDashboard />} />
-              <Route path="users" element={<AdminUsers />} />
-              <Route path="reports" element={<AdminReports />} />
-              <Route path="categories" element={<AdminCategories />} />
+            <Route element={<RequireRole role="admin" />}>
+              <Route path="/admin" element={<AdminLayout />}>
+                <Route index element={<AdminDashboard />} />
+                <Route path="users" element={<AdminUsers />} />
+                <Route path="reports" element={<AdminReports />} />
+                <Route path="categories" element={<AdminCategories />} />
+              </Route>
             </Route>
 
             {/* Seller Branch - No Header/Footer from main Layout */}
-            <Route path="/seller" element={<SellerLayout />}>
-              <Route index element={<SellerDashboard />} />
-              <Route path="products" element={<SellerProducts />} />
-              <Route path="orders" element={<SellerOrders />} />
-              <Route path="reports" element={<SellerReports />} />
-              <Route path="reviews" element={<SellerReviews />} />
-              <Route path="profile" element={<StoreProfile />} />
+            <Route element={<RequireRole role="seller" />}>
+              <Route path="/seller" element={<SellerLayout />}>
+                <Route index element={<SellerDashboard />} />
+                <Route path="products" element={<SellerProducts />} />
+                <Route path="orders" element={<SellerOrders />} />
+                <Route path="reports" element={<SellerReports />} />
+                <Route path="reviews" element={<SellerReviews />} />
+                <Route path="profile" element={<StoreProfile />} />
+              </Route>
             </Route>
           </Routes>
         </Suspense>

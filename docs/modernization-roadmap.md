@@ -25,10 +25,12 @@ the rest are proposals. Nothing in P1–P3 is started unless marked.
 
 ## P2 — hygiene & DX
 
-11. **Dependency pruning** — ~24 unused `@radix-ui/*` (only `react-slot` imported), plus `cmdk`/`vaul`/`embla-carousel-react`/`date-fns` with zero `src/` imports; dedupe the double `vite` entry (deps + devDeps); drop `cors` (no longer imported). Remove only after a clean `vite build` + `tsc` with them gone.
+11. ✅ **Dependency pruning** — done: only `@radix-ui/react-slot` remains (imported
+    by `button.tsx`); `cmdk`/`vaul`/`embla-carousel-react`/`date-fns`/`cors` removed;
+    single `vite` in devDeps.
 12. **Tests** — none exist. Start with checkout-transaction + auth-gate integration tests
    (needs a test DB + harness; currently zero infra).
-13. **CI** — lint + build + tests on push (no workflow exists; no git repo yet).
+13. **CI** — lint + build + tests on push (no workflow exists yet).
 14. ✅ **PWA caching** — catalog APIs moved to `NetworkFirst` + 10s timeout; dead `GEMINI_API_KEY` client define removed (`vite.config.ts`).
 15. ✅ **`PORT` env support** — `server/config.ts` reads `process.env.PORT` (default 3000).
 

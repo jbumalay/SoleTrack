@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { getPool } from "../db";
-import { asyncHandler, parseListLimit, type Row } from "../utils";
+import { asyncHandler, parseId, parseListLimit, type Row } from "../utils";
 
 export function registerPublicRoutes(app: Express): void {
   app.get(
@@ -16,26 +16,31 @@ export function registerPublicRoutes(app: Express): void {
       const pool = getPool();
       const { category, limit, id, seller_id } = req.query;
 
-      if (id) {
+      if (id !== undefined && id !== "") {
+        const pid = parseId(id);
+        if (pid === null) {
+          res.status(400).json({ status: "error", message: "Invalid ID" });
+          return;
+        }
         const [productRows] = (await pool.execute(
           `
           SELECT p.*, c.category_name, u.brand_name,
-                 (SELECT SUM(stock_quantity) FROM inventory WHERE product_id = p.product_id) as total_stock,
-                 (SELECT AVG(rating) FROM reviews WHERE product_id = p.product_id) as average_rating,
-                 (SELECT COUNT(*) FROM reviews WHERE product_id = p.product_id) as total_reviews
+                  (SELECT SUM(stock_quantity) FROM inventory WHERE product_id = p.product_id) as total_stock,
+                  (SELECT AVG(rating) FROM reviews WHERE product_id = p.product_id) as average_rating,
+                  (SELECT COUNT(*) FROM reviews WHERE product_id = p.product_id) as total_reviews
           FROM products p
           JOIN categories c ON p.category_id = c.category_id
           JOIN users u ON p.seller_id = u.user_id
           WHERE p.product_id = ? AND p.deleted_at IS NULL
         `,
-          [String(id)]
+          [pid]
         )) as unknown as [Row[], unknown];
 
         const product = productRows[0] as (Row & { reviews?: Row[]; inventory?: Row[] }) | undefined;
         if (product) {
           const [reviews] = (await pool.execute(
             "SELECT * FROM reviews WHERE product_id = ? ORDER BY created_at DESC",
-            [String(id)]
+            [pid]
           )) as unknown as [Row[], unknown];
           const [inventory] = (await pool.execute(
             `
@@ -44,7 +49,7 @@ export function registerPublicRoutes(app: Express): void {
             JOIN sizes s ON i.size_id = s.size_id
             WHERE i.product_id = ? AND i.deleted_at IS NULL
           `,
-            [String(id)]
+            [pid]
           )) as unknown as [Row[], unknown];
           product.reviews = reviews;
           product.inventory = inventory;
@@ -57,9 +62,9 @@ export function registerPublicRoutes(app: Express): void {
 
       let query = `
         SELECT p.*, c.category_name, u.brand_name,
-               (SELECT SUM(stock_quantity) FROM inventory WHERE product_id = p.product_id) as total_stock,
-               (SELECT AVG(rating) FROM reviews WHERE product_id = p.product_id) as average_rating,
-               (SELECT COUNT(*) FROM reviews WHERE product_id = p.product_id) as total_reviews
+                (SELECT SUM(stock_quantity) FROM inventory WHERE product_id = p.product_id) as total_stock,
+                (SELECT AVG(rating) FROM reviews WHERE product_id = p.product_id) as average_rating,
+                (SELECT COUNT(*) FROM reviews WHERE product_id = p.product_id) as total_reviews
         FROM products p
         JOIN categories c ON p.category_id = c.category_id
         JOIN users u ON p.seller_id = u.user_id
@@ -73,8 +78,8 @@ export function registerPublicRoutes(app: Express): void {
       }
 
       if (seller_id !== undefined && seller_id !== "") {
-        const sid = Number(seller_id);
-        if (!Number.isInteger(sid) || sid <= 0) {
+        const sid = parseId(seller_id);
+        if (sid === null) {
           res.status(400).json({ status: "error", message: "Invalid seller_id" });
           return;
         }
@@ -140,16 +145,20 @@ export function registerPublicRoutes(app: Express): void {
     "/api/stores/:id",
     asyncHandler(async (req, res) => {
       const pool = getPool();
-      const { id } = req.params;
+      const storeId = parseId(req.params.id);
+      if (storeId === null) {
+        res.status(400).json({ status: "error", message: "Invalid ID" });
+        return;
+      }
       const [userRows] = (await pool.execute(
         `
-        SELECT u.user_id, u.username, u.brand_name, u.first_name, u.last_name, u.email,
+        SELECT u.user_id, u.username, u.brand_name, u.first_name, u.last_name,
                sp.description, sp.logo_url, sp.banner_url, sp.location, sp.contact_email, sp.phone
         FROM users u
         LEFT JOIN seller_profiles sp ON u.user_id = sp.seller_id
         WHERE u.user_id = ? AND u.role = 'seller' AND u.deleted_at IS NULL
       `,
-        [id]
+        [storeId]
       )) as unknown as [Row[], unknown];
 
       if (userRows.length === 0) {
@@ -168,7 +177,7 @@ export function registerPublicRoutes(app: Express): void {
         WHERE p.seller_id = ? AND p.status = 'active' AND p.deleted_at IS NULL
         ORDER BY p.created_at DESC
       `,
-        [id]
+        [storeId]
       )) as unknown as [Row[], unknown];
 
       res.json({ status: "success", data: { ...userRows[0], products } });

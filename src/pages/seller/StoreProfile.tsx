@@ -6,7 +6,9 @@ import { toast } from "sonner";
 
 export default function StoreProfile() {
   const { user } = useAuth();
+  void user;
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     brand_name: "",
@@ -18,10 +20,13 @@ export default function StoreProfile() {
     phone: "",
   });
 
-  useEffect(() => {
-    apiService.getSellerProfile().then((res) => {
+  const fetchProfile = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await apiService.getSellerProfile();
       if (res.status === "success") {
-        const data = res.data;
+        const data = res.data as any;
         setForm({
           brand_name: data.brand_name || "",
           description: data.profile?.description || "",
@@ -31,9 +36,18 @@ export default function StoreProfile() {
           contact_email: data.profile?.contact_email || data.email || "",
           phone: data.profile?.phone || "",
         });
+      } else {
+        setError(res.message || "Failed to load profile");
       }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to load profile");
+    } finally {
       setLoading(false);
-    }).catch(() => setLoading(false));
+    }
+  };
+
+  useEffect(() => {
+    fetchProfile();
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -66,6 +80,16 @@ export default function StoreProfile() {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="w-10 h-10 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="max-w-3xl mx-auto p-6 sm:p-10 text-center">
+        <p className="text-[10px] font-black uppercase tracking-widest text-red-500 mb-2">Profile unavailable</p>
+        <p className="text-sm text-gray-500 font-medium mb-6">{error}</p>
+        <button onClick={fetchProfile} className="px-8 py-4 bg-gray-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-primary transition-all">Retry</button>
       </div>
     );
   }

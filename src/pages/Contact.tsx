@@ -8,6 +8,9 @@ export function Contact() {
 
   const handleMailTo = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!form.firstName.trim() || !form.lastName.trim()) { toast.error("Please enter your full name"); return; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) { toast.error("Please enter a valid email address"); return; }
+    if (form.message.trim().length < 10) { toast.error("Message must be at least 10 characters"); return; }
     const subject = encodeURIComponent(`Heritage Inquiry: ${form.topic}`);
     const body = encodeURIComponent(
       `Name: ${form.firstName} ${form.lastName}\nEmail: ${form.email}\nTopic: ${form.topic}\n\n${form.message}`
@@ -64,17 +67,17 @@ export function Contact() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                        <div>
                           <FormLabel>First Name</FormLabel>
-                          <ContactInput placeholder="Juan" value={form.firstName} onChange={(e) => setForm({...form, firstName: e.target.value})} />
+                          <ContactInput required minLength={2} placeholder="Juan" value={form.firstName} onChange={(e) => setForm({...form, firstName: e.target.value})} />
                        </div>
                        <div>
                           <FormLabel>Last Name</FormLabel>
-                          <ContactInput placeholder="Dela Cruz" value={form.lastName} onChange={(e) => setForm({...form, lastName: e.target.value})} />
+                          <ContactInput required minLength={2} placeholder="Dela Cruz" value={form.lastName} onChange={(e) => setForm({...form, lastName: e.target.value})} />
                        </div>
                     </div>
                     
                     <div>
                        <FormLabel>Identity Email</FormLabel>
-                       <ContactInput type="email" placeholder="heritage@address.com" value={form.email} onChange={(e) => setForm({...form, email: e.target.value})} />
+                       <ContactInput type="email" required placeholder="heritage@address.com" value={form.email} onChange={(e) => setForm({...form, email: e.target.value})} />
                     </div>
 
                     <div>
@@ -92,7 +95,7 @@ export function Contact() {
                        <textarea 
                          value={form.message} onChange={(e) => setForm({...form, message: e.target.value})}
                          rows={6}
-                         placeholder="Tell us your story or question..."
+                         required minLength={10} placeholder="Tell us your story or question (min 10 characters)..."
                          className="w-full px-8 py-5 border border-gray-100 bg-gray-50 rounded-2xl focus:ring-2 focus:ring-primary focus:bg-white transition-all outline-none font-bold text-sm resize-none"
                        />
                     </div>

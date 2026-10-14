@@ -84,8 +84,8 @@ export default function AdminReports() {
   );
 
   const metricsData = data?.metrics || {};
-  const trendData = data?.trend || [];
-  const sellerBreakdown = data?.sellerBreakdown || [];
+  const trendData: any[] = Array.isArray(data?.trend) ? data.trend : [];
+  const sellerBreakdown: any[] = Array.isArray(data?.sellerBreakdown) ? data.sellerBreakdown : [];
 
   const COLORS = ['#F97316', '#3B82F6', '#10B981', '#6366F1', '#A855F7', '#EC4899'];
 
@@ -109,7 +109,20 @@ export default function AdminReports() {
         </div>
         <button 
           onClick={() => {
-            toast.info("Artisan CSV report generation in progress...");
+            const rows: any[] = Array.isArray(sellerBreakdown) ? sellerBreakdown : [];
+            if (rows.length === 0) { toast.info("No data to export yet"); }
+            else {
+              const header = ["Brand", "Orders", "Items Sold", "Revenue", "Status"];
+              const csvRows = rows.map((r: any) => [JSON.stringify(r.brand_name ?? "Individual"), r.total_orders ?? 0, r.total_items_sold ?? 0, r.revenue ?? 0, JSON.stringify(r.status ?? "")].join(","));
+              const csv = "data:text/csv;charset=utf-8," + header.join(",") + "\n" + csvRows.join("\n");
+              const link = document.createElement("a");
+              link.setAttribute("href", encodeURI(csv));
+              link.setAttribute("download", "SoleTrack_Platform_Report.csv");
+              document.body.appendChild(link);
+              link.click();
+              document.body.removeChild(link);
+              toast.success("Platform report exported");
+            }
           }}
           className="flex items-center gap-3 px-8 py-4 bg-gray-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-primary transition-all shadow-xl shadow-gray-200"
         >

@@ -21,6 +21,7 @@ import {
 import { motion, AnimatePresence } from "motion/react";
 import { toast } from "sonner";
 import { useSearchParams } from "react-router";
+import { normalizeList } from "@/utils/normalizeList";
 
 export default function AdminUsers() {
   const [searchParams] = useSearchParams();
@@ -38,10 +39,10 @@ export default function AdminUsers() {
       const response = await apiService.getAdminUsers({ 
         search, 
         role: roleFilter, 
-        status: statusFilter 
+        status: statusFilter, page: 1, limit: 100 
       });
       if (response.status === "success") {
-        setUsers(response.data);
+        setUsers(normalizeList(response.data) ?? []);
       }
     } catch (error: any) {
       toast.error(error.message || "Failed to fetch users");

@@ -9,7 +9,7 @@ All paths verified against `server/` route registrations (`server/routes/*.ts`, 
 | Method | Path | Query / body | Notes |
 |---|---|---|---|
 | GET | `/api/health` | — | `{status, message}` liveness |
-| GET | `/api/products` | `?id=` single with `reviews[]`,`inventory[]`; else `?category=&limit=&seller_id=` list with stock/rating aggregates | `LIMIT ?` bound param (see security note) |
+| GET | `/api/products` | `?id=` single with `reviews[]`,`inventory[]`; else `?category=&limit=&seller_id=` list with stock/rating aggregates | `limit` validated/clamped (max 100) + inlined; `limit=abc` → 400 |
 | GET | `/api/categories` | — | all rows |
 | GET | `/api/sizes` | — | ordered by `size_id` |
 | GET | `/api/stores` | — | active sellers + `product_count` |
@@ -20,7 +20,7 @@ All paths verified against `server/` route registrations (`server/routes/*.ts`, 
 | Method | Path | Body | Notes |
 |---|---|---|---|
 | POST | `/api/auth/login` | `{email, password}` | bcrypt verify → `{...userInfo (no hash), token}`; 401 on failure |
-| POST | `/api/auth/register` | `{email, password (≥8), role?, first_name?, last_name?, brand_name?}` | **role taken from client**; seller → `pending_approval`; auto-login token; 500-crash if `password` missing (see security note) |
+| POST | `/api/auth/register` | `{email, password (≥8), role?, first_name?, last_name?, brand_name?}` | `role` allowlisted (`customer`/`seller`; `admin` → 400); seller → `pending_approval`; auto-login token; missing/short password → 400 |
 | GET | `/api/auth/me` | — (Bearer) | `{...userInfo}` or 401 |
 | POST | `/api/auth/logout` | — (Bearer, optional) | deletes session row; always 200 |
 

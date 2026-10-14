@@ -1,11 +1,12 @@
 import React, { useState } from "react";
-import { useNavigate, Link } from "react-router";
+import { useNavigate, Link, useSearchParams } from "react-router";
 import { UserPlus, ArrowLeft, ShieldCheck, CheckCircle2 } from "lucide-react";
 import { motion } from "motion/react";
 import { useAuth } from "@/context/AuthContext";
 
 export function Register() {
   const { register } = useAuth();
+  const [searchParams] = useSearchParams();
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -54,8 +55,10 @@ export function Register() {
     
     if (user) {
       setSuccess(true);
+      const redirect = searchParams.get("redirect");
       setTimeout(() => {
-        if (user.role === 'seller') navigate('/seller');
+        if (redirect) navigate(redirect);
+        else if (user.role === 'seller') navigate('/seller');
         else navigate('/dashboard');
       }, 2500);
     }

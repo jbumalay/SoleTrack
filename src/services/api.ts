@@ -4,11 +4,25 @@
 
 const API_BASE_URL = "/api";
 
+export interface ApiResponse<T = any> {
+  status: string;
+  message?: string;
+  data: T;
+}
+
+export interface PaginatedParams {
+  page?: number | string;
+  limit?: number | string;
+  search?: string;
+  category?: string;
+  [key: string]: unknown;
+}
+
 export const apiService = {
   /**
    * General fetch wrapper
    */
-  async request(endpoint: string, options: RequestInit = {}) {
+  async request<T = any>(endpoint: string, options: RequestInit = {}): Promise<ApiResponse<T>> {
     const token = localStorage.getItem("soletrack_token");
     try {
       const response = await fetch(`${API_BASE_URL}${endpoint}`, {
@@ -26,13 +40,13 @@ export const apiService = {
         if (!response.ok) {
           throw new Error(data.message || `Server error (${response.status})`);
         }
-        return data;
+        return data as ApiResponse<T>;
       } else {
         const text = await response.text();
         console.error("Non-JSON response from server:", text);
         throw new Error(`Server error: ${response.status}`);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error(`API Request Failed [${endpoint}]:`, error);
       throw error;
     }
@@ -41,71 +55,76 @@ export const apiService = {
   /**
    * Check API health
    */
-  async checkHealth() {
+  async checkHealth(): Promise<ApiResponse<any>> {
     return this.request("/health");
   },
 
   /**
    * Auth methods
    */
-  async login(credentials: any) {
+  async login(credentials: unknown): Promise<ApiResponse<any>> {
     return this.request("/auth/login", {
       method: "POST",
       body: JSON.stringify(credentials),
     });
   },
 
-  async register(userData: any) {
+  async register(userData: unknown): Promise<ApiResponse<any>> {
     return this.request("/auth/register", {
       method: "POST",
       body: JSON.stringify(userData),
     });
   },
 
-  async logout() {
+  async logout(): Promise<ApiResponse<any>> {
     return this.request("/auth/logout", {
       method: "POST",
     });
   },
 
-  async getCurrentUser() {
+  async getCurrentUser(): Promise<ApiResponse<any>> {
     return this.request("/auth/me");
   },
 
   /**
    * Product & Category methods
    */
-  async getProducts(params: any = {}) {
-    const query = new URLSearchParams(params).toString();
+  async getProducts(params: PaginatedParams & Record<string, unknown> = {}): Promise<ApiResponse<any>> {
+    const cleaned: Record<string, string> = {};
+    for (const [k, v] of Object.entries(params)) {
+      if (v === undefined || v === null || v === "") continue;
+      cleaned[k] = String(v);
+    }
+    const query = new URLSearchParams(cleaned).toString();
     return this.request(`/products?${query}`);
   },
 
-  async getCategories() {
+  async getCategories(): Promise<ApiResponse<any>> {
     return this.request("/categories");
   },
 
   /**
    * Cart methods
    */
-  async getCart() {
+  async getCart(): Promise<ApiResponse<any>> {
     return this.request("/cart");
   },
 
-  async addToCart(productId: number, quantity: number, sizeId?: number) {
+  async addToCart(productId: number, quantity: number, sizeId?: number): Promise<ApiResponse<any>> {
     return this.request("/cart/add", {
       method: "POST",
       body: JSON.stringify({ product_id: productId, quantity, size_id: sizeId }),
     });
   },
 
-  async updateCartItem(itemId: number, quantity: number) {
+  async updateCartItem(itemId: number, quantity: number): Promise<ApiResponse<any>> {
     return this.request(`/cart/update?id=${itemId}`, {
       method: "PUT",
       body: JSON.stringify({ quantity }),
     });
   },
 
-  async removeCartItem(itemId: number) {
+  async removeCartItem(itemId: number): Promise<ApiResponse<any>> {
     return this.request(`/cart/remove?id=${itemId}`, {
       method: "DELETE",
     });
@@ -114,28 +133,28 @@ export const apiService = {
   /**
    * Order methods
    */
-  async checkout(shippingDetails: any) {
+  async checkout(shippingDetails: unknown): Promise<ApiResponse<any>> {
     return this.request("/checkout", {
       method: "POST",
       body: JSON.stringify(shippingDetails),
     });
   },
 
-  async getMyOrders() {
+  async getMyOrders(): Promise<ApiResponse<any>> {
     return this.request("/orders/my");
   },
 
-  async getOrderDetails(orderId: number) {
+  async getOrderDetails(orderId: number): Promise<ApiResponse<any>> {
     return this.request(`/orders/details?id=${orderId}`);
   },
 
-  async simulateOrderProgress(orderId: number) {
+  async simulateOrderProgress(orderId: number): Promise<ApiResponse<any>> {
     return this.request(`/orders/simulate?id=${orderId}`, {
       method: "POST",
     });
   },
 
-  async cancelOrder(orderId: number) {
+  async cancelOrder(orderId: number): Promise<ApiResponse<any>> {
     return this.request(`/orders/cancel?id=${orderId}`, {
       method: "PUT",
     });
@@ -144,82 +163,87 @@ export const apiService = {
   /**
    * Payment methods
    */
-  async getPaymentHistory(orderId: number) {
+  async getPaymentHistory(orderId: number): Promise<ApiResponse<any>> {
     return this.request(`/payment/history?order_id=${orderId}`);
   },
 
   /**
    * Admin Methods
    */
-  async getAdminDashboard() {
+  async getAdminDashboard(): Promise<ApiResponse<any>> {
     return this.request("/admin/dashboard");
   },
 
-  async getAdminUsers(params: { search?: string, role?: string, status?: string } = {}) {
-    const query = new URLSearchParams(params).toString();
+  async getAdminUsers(params: PaginatedParams & { role?: string; status?: string } = {}): Promise<ApiResponse<any>> {
+    const cleaned: Record<string, string> = {};
+    for (const [k, v] of Object.entries(params)) {
+      if (v === undefined || v === null || v === "") continue;
+      cleaned[k] = String(v);
+    }
+    const query = new URLSearchParams(cleaned).toString();
     return this.request(`/admin/users?${query}`);
   },
 
-  async createAdminUser(userData: any) {
+  async createAdminUser(userData: unknown): Promise<ApiResponse<any>> {
     return this.request("/admin/users", {
       method: "POST",
       body: JSON.stringify(userData),
     });
   },
 
-  async updateAdminUser(id: number, userData: any) {
+  async updateAdminUser(id: number, userData: unknown): Promise<ApiResponse<any>> {
     return this.request(`/admin/users/${id}`, {
       method: "PUT",
       body: JSON.stringify(userData),
     });
   },
 
-  async deleteAdminUser(id: number) {
+  async deleteAdminUser(id: number): Promise<ApiResponse<any>> {
     return this.request(`/admin/users/${id}`, {
       method: "DELETE",
     });
   },
 
-  async getAdminReports() {
+  async getAdminReports(): Promise<ApiResponse<any>> {
     return this.request("/admin/reports");
   },
 
-  async getAdminCategories() {
+  async getAdminCategories(): Promise<ApiResponse<any>> {
     return this.request("/admin/categories");
   },
 
-  async createAdminCategory(data: any) {
+  async createAdminCategory(data: unknown): Promise<ApiResponse<any>> {
     return this.request("/admin/categories", {
       method: "POST",
       body: JSON.stringify(data),
     });
   },
 
-  async updateAdminCategory(id: number, data: any) {
+  async updateAdminCategory(id: number, data: unknown): Promise<ApiResponse<any>> {
     return this.request(`/admin/categories/${id}`, {
       method: "PUT",
       body: JSON.stringify(data),
     });
   },
 
-  async deleteAdminCategory(id: number) {
+  async deleteAdminCategory(id: number): Promise<ApiResponse<any>> {
     return this.request(`/admin/categories/${id}`, {
       method: "DELETE",
     });
   },
 
-  async getAdminSizes() {
+  async getAdminSizes(): Promise<ApiResponse<any>> {
     return this.request("/admin/sizes");
   },
 
-  async createAdminSize(data: any) {
+  async createAdminSize(data: unknown): Promise<ApiResponse<any>> {
     return this.request("/admin/sizes", {
       method: "POST",
       body: JSON.stringify(data),
     });
   },
 
-  async deleteAdminSize(id: number) {
+  async deleteAdminSize(id: number): Promise<ApiResponse<any>> {
     return this.request(`/admin/sizes/${id}`, {
       method: "DELETE",
     });
@@ -228,81 +252,87 @@ export const apiService = {
   /**
    * Seller Methods
    */
-  async getSellerDashboard() {
+  async getSellerDashboard(): Promise<ApiResponse<any>> {
     return this.request("/seller/dashboard");
   },
 
-  async getSellerProducts() {
+  async getSellerProducts(): Promise<ApiResponse<any>> {
     return this.request("/seller/products");
   },
 
-  async createSellerProduct(data: any) {
+  async createSellerProduct(data: unknown): Promise<ApiResponse<any>> {
     return this.request("/seller/products", {
       method: "POST",
       body: JSON.stringify(data)
     });
   },
 
-  async updateSellerProduct(data: any) {
+  async updateSellerProduct(data: unknown): Promise<ApiResponse<any>> {
     return this.request("/seller/products", {
       method: "PUT",
       body: JSON.stringify(data)
     });
   },
 
-  async deleteSellerProduct(id: number) {
+  async deleteSellerProduct(id: number): Promise<ApiResponse<any>> {
     return this.request(`/seller/products?id=${id}`, {
       method: "DELETE"
     });
   },
 
-  async getSellerReports(days: number = 7) {
+  async getSellerReports(days: number = 7): Promise<ApiResponse<any>> {
     return this.request(`/seller/reports/sales?days=${days}`);
   },
 
-  async getSellerProductReviews(productId: number) {
+  async getSellerProductReviews(productId: number): Promise<ApiResponse<any>> {
     return this.request(`/seller/reviews?product_id=${productId}`);
   },
 
-  async getSellerOrders() {
-    return this.request("/seller/orders");
+  async getSellerOrders(params: PaginatedParams & Record<string, unknown> = {}): Promise<ApiResponse<any>> {
+    const cleaned: Record<string, string> = {};
+    for (const [k, v] of Object.entries(params)) {
+      if (v === undefined || v === null || v === "") continue;
+      cleaned[k] = String(v);
+    }
+    const query = new URLSearchParams(cleaned).toString();
+    return this.request(`/seller/orders${query ? `?${query}` : ""}`);
   },
 
-  async updateSellerOrderStatus(orderId: number, status: string) {
+  async updateSellerOrderStatus(orderId: number, status: string): Promise<ApiResponse<any>> {
     return this.request("/seller/orders/status", {
       method: "PUT",
       body: JSON.stringify({ order_id: orderId, status })
     });
   },
 
-  async createReview(data: { product_id: number; rating: number; comment: string }) {
+  async createReview(data: { product_id: number; rating: number; comment: string }): Promise<ApiResponse<any>> {
     return this.request("/reviews", {
       method: "POST",
       body: JSON.stringify(data),
     });
   },
 
-  async getProduct(id: number) {
+  async getProduct(id: number): Promise<ApiResponse<any>> {
     return this.request(`/products?id=${id}`);
   },
 
-  async getSizes() {
+  async getSizes(): Promise<ApiResponse<any>> {
     return this.request("/sizes");
   },
 
-  async getStores() {
+  async getStores(): Promise<ApiResponse<any>> {
     return this.request("/stores");
   },
 
-  async getStore(id: number) {
+  async getStore(id: number): Promise<ApiResponse<any>> {
     return this.request(`/stores/${id}`);
   },
 
-  async getSellerProfile() {
+  async getSellerProfile(): Promise<ApiResponse<any>> {
     return this.request("/seller/profile");
   },
 
-  async updateSellerProfile(data: any) {
+  async updateSellerProfile(data: unknown): Promise<ApiResponse<any>> {
     return this.request("/seller/profile", {
       method: "PUT",
       body: JSON.stringify(data),

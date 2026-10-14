@@ -6,12 +6,14 @@ import { apiService } from "@/services/api";
 import { CartItem } from "@/types";
 import { useAuth } from "@/context/AuthContext";
 import { SHIPPING_THRESHOLD, SHIPPING_FEE } from "@/constants";
+import { toast } from "sonner";
 
 export function Cart() {
   const navigate = useNavigate();
   const { refreshCart, isAdmin, isSeller, loading: authLoading } = useAuth();
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState(false);
   const [updatingItems, setUpdatingItems] = useState<Record<number, boolean>>({});
 
   useEffect(() => {
@@ -24,9 +26,12 @@ export function Cart() {
     try {
       const response = await apiService.getCart();
       if (response.status === "success") {
-        setCartItems(response.data.items || []);
+        setCartItems((response.data.items as CartItem[] | undefined) ?? []);
       }
-    } catch (error) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Failed to fetch cart";
+      if (message.includes("401") || message.toLowerCase().includes("unauthor")) setAuthError(true);
+      else toast.error(message);
       console.error("Failed to fetch cart:", error);
     } finally {
       setLoading(false);
@@ -45,8 +50,8 @@ export function Cart() {
       await apiService.updateCartItem(id, quantity);
       await fetchCart();
       await refreshCart();
-    } catch (error: any) {
-      alert(error.message || "Failed to update quantity");
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : "Failed to update quantity");
       console.error("Failed to update quantity:", error);
     } finally {
       setUpdatingItems(prev => ({ ...prev, [id]: false }));
@@ -59,7 +64,8 @@ export function Cart() {
       await apiService.removeCartItem(id);
       await fetchCart();
       await refreshCart();
-    } catch (error) {
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : "Failed to remove item");
       console.error("Failed to remove item:", error);
     } finally {
       setUpdatingItems(prev => ({ ...prev, [id]: false }));
@@ -74,6 +80,18 @@ export function Cart() {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center p-4">
         <Loader2 className="w-12 h-12 animate-spin text-primary opacity-50" />
+      </div>
+    );
+  }
+
+  if (authError) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center p-4">
+        <div className="text-center max-w-md bg-gray-50 p-12 rounded-[3rem] border border-gray-100">
+          <h2 className="text-2xl font-black italic mb-4">Please log in</h2>
+          <p className="text-gray-500 font-medium mb-8">Your heritage cart is waiting. Log in to continue.</p>
+          <Link to="/login?redirect=%2Fcart" className="inline-flex items-center justify-center bg-primary text-white px-10 py-5 rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-primary/90 transition-all">Go to Login</Link>
+        </div>
       </div>
     );
   }

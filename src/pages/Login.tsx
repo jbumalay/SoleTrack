@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useNavigate, Link } from "react-router";
+import { useNavigate, Link, useSearchParams } from "react-router";
 import { useAuth } from "../context/AuthContext";
 import { LogIn, ArrowLeft, ShieldCheck, Eye, EyeOff } from "lucide-react";
 import { motion } from "motion/react";
@@ -11,12 +11,15 @@ export function Login() {
   const [error, setError] = useState("");
   const { login } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     const user = await login({ email, password });
     if (user) {
+      const redirect = searchParams.get("redirect");
+      if (redirect) { navigate(redirect); return; }
       if (user.role === 'admin') navigate('/admin');
       else if (user.role === 'seller') navigate('/seller');
       else navigate('/');

@@ -60,6 +60,9 @@ export async function seedData(): Promise<void> {
     const sizeRowsAll = (await pool.execute(
       "SELECT size_id FROM sizes ORDER BY size_id ASC"
     )) as unknown as [Array<{ size_id: number }>, unknown];
+    if (!Array.isArray(sizeRowsAll[0]) || sizeRowsAll[0].length < 8) {
+      throw new Error("Seed failed: expected at least 8 sizes");
+    }
     const sizeId7 = sizeRowsAll[0][2].size_id;
     const sizeId8 = sizeRowsAll[0][3].size_id;
     const sizeId9 = sizeRowsAll[0][4].size_id;

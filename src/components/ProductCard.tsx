@@ -1,5 +1,4 @@
 import { Link, useNavigate } from "react-router";
-import { Star, TrendingUp } from "lucide-react";
 import { Product } from "@/types";
 import { LOW_STOCK_THRESHOLD } from "@/constants";
 
@@ -9,10 +8,14 @@ interface ProductCardProps {
 
 export function ProductCard({ product }: ProductCardProps) {
   const navigate = useNavigate();
-  const productId = product.product_id;
-  const productName = product.product_name || product.name;
-  const productPrice = Number(product.base_price || product.price);
-  const productImage = product.image_url || product.image;
+  const id = product.product_id ?? product.id;
+  if (!id) return null;
+
+  const productName = product.product_name || product.name || "Untitled product";
+  const rawPrice = Number(product.base_price ?? product.price);
+  const priceLabel = Number.isFinite(rawPrice) ? `₱${rawPrice.toLocaleString()}` : "₱--";
+  const productImage = product.image_url || product.image || "/placeholder.png";
+  const hasImage = Boolean(product.image_url || product.image);
   const productCategory = product.category_name || product.category;
   const productStock = product.total_stock !== undefined ? Number(product.total_stock) : (product.stock_quantity !== undefined ? Number(product.stock_quantity) : 0);
 
@@ -26,14 +29,21 @@ export function ProductCard({ product }: ProductCardProps) {
   const stockStatus = getStockStatus();
 
   return (
-    <Link to={`/product/${productId}`} className="group">
+    <Link to={`/product/${id}`} className="group">
       <div className="bg-white rounded-xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 border border-gray-100 flex flex-col h-full">
         <div className="aspect-square overflow-hidden bg-gray-50 relative">
-          <img
-            src={productImage}
-            alt={productName}
-            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-          />
+          {hasImage ? (
+            <img
+              src={productImage}
+              alt={productName}
+              className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+              onError={(e) => { (e.target as HTMLImageElement).src = "/placeholder.png"; }}
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-gray-300 text-xs font-bold uppercase tracking-widest">
+              No image
+            </div>
+          )}
           <div className={`absolute top-3 right-3 ${stockStatus.color} text-white text-[10px] px-2.5 py-1 rounded-full font-bold uppercase tracking-wider flex items-center gap-1.5 shadow-sm`}>
             <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
             {stockStatus.label}
@@ -44,11 +54,13 @@ export function ProductCard({ product }: ProductCardProps) {
             <span>{productCategory}</span>
             <span className="text-gray-400 font-medium italic lowercase tracking-tight">by
               {product.seller_id ? (
-                <button
-                  type="button"
+                <span
+                  role="link"
+                  tabIndex={0}
                   onClick={(e) => { e.preventDefault(); e.stopPropagation(); navigate(`/store/${product.seller_id}`); }}
-                  className="hover:text-primary transition-colors ml-0.5"
-                >{product.brand_name}</button>
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); navigate(`/store/${product.seller_id}`); } }}
+                  className="hover:text-primary transition-colors ml-0.5 cursor-pointer underline-offset-2 hover:underline"
+                >{product.brand_name}</span>
               ) : (
                 <span className="ml-0.5">{product.brand_name}</span>
               )}
@@ -59,7 +71,7 @@ export function ProductCard({ product }: ProductCardProps) {
           </h3>
           <div className="mt-auto pt-4 border-t border-gray-50 flex items-center justify-between">
             <div>
-              <div className="text-xl font-black text-gray-900 italic tracking-tight">₱{productPrice.toLocaleString()}</div>
+              <div className="text-xl font-black text-gray-900 italic tracking-tight">{priceLabel}</div>
             </div>
             <div className="w-10 h-10 rounded-xl bg-gray-50 flex items-center justify-center group-hover:bg-primary group-hover:text-white transition-all shadow-sm group-hover:shadow-primary/20">
               <span className="text-lg font-black">+</span>
