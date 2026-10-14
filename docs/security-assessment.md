@@ -18,7 +18,7 @@ as documented follow-ups. Nothing below invents runtime test results.
 | 7 | **Low** | **`LIMIT ?` bound parameter** — eliminated: client `limit` is validated/clamped (`parseListLimit`, max 100) and inlined; invalid values → 400. Needs live-DB smoke test to confirm | `server/utils.ts`, `server/routes/public.ts` | **Fixed** (static; runtime verification pending XAMPP) |
 | 8 | **Low** | **PWA `CacheFirst` staleness** — moved catalog APIs to `NetworkFirst` + 10s timeout (fresh data, cache fallback offline only) | `vite.config.ts` (runtimeCaching + comment) | **Fixed** |
 | 9 | **Low** | **Missing security headers** — no `helmet`, no HSTS/CSP/frame-ancestors; SPA fallback + PWA widens clickjacking/SW scope considerations | `server/app.ts` (no helmet import), `package.json` (no helmet dep) | **Outstanding** |
-| 10 | **Low** | **No input validation library** — free-form bodies validated ad hoc (register/login/cart/seller/admin coerce + range-check; ratings/statuses allowlisted) but there is still no shared schema layer; `orders.status`/`payment_status` unconstrained VARCHAR | `server/routes/*`; no zod/validator dep | **Outstanding** (partially mitigated) |
+| 10 | **Low** | **No input validation library** — free-form bodies validated ad hoc (register/login/cart/seller/admin coerce + range-check; ratings/statuses/payment-statuses allowlisted; reviews require a `delivered` purchase + one-per-user with a DB `UNIQUE` backstop) but there is still no shared schema layer; `orders.status`/`payment_status` remain `VARCHAR` without ENUMs | `server/routes/*`; no zod/validator dep | **Outstanding** (partially mitigated) |
 | 11 | **Info** | **`process.env.GEMINI_API_KEY` exposed to client bundle** — removed the dead `define` (grep confirms zero `GEMINI`/`import.meta.env` usage in `src/`) | `vite.config.ts` (define removed) | **Fixed** |
 
 ## Static secret / artifact sweep (read-only, values not printed)
@@ -41,8 +41,10 @@ as documented follow-ups. Nothing below invents runtime test results.
   hashes never returned (`password_hash` destructured out on all auth reads).
 - All SQL uses parameterized `?` placeholders — no string-interpolated values found
   (client `limit` is validated + inlined as an integer, never interpolated raw).
-- Checkout uses a real transaction with row-guard decrement + rollback.
-- Ownership checks on order details / seller order status / seller reviews;
+- Checkout uses a real transaction with row-guard decrement + rollback; cancel
+  restocks in-transaction; payment updates are transactional + idempotent.
+- Ownership checks on order details / seller order status / seller order payment /
+  seller reviews, plus delivered-purchase + one-per-user checks on reviews;
   self-delete blocked for admins; in-use guards on category/size deletes.
 - Registration role allowlist (`customer`/`seller`); seller APIs additionally gated on
   `status === 'active'`; every async handler wrapped so rejections return JSON.

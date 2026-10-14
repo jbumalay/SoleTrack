@@ -56,16 +56,16 @@ scripts/                   # generate-icons.mjs, generate-screenshots.mjs (PWA a
 | File | Contents |
 |---|---|
 | `config.ts` | `PORT` (default 3000), DB env reads (`DB_HOST/PORT/USER/PASS/NAME`), business constants, `MAX_LIST_LIMIT`, `SESSION_TTL_MS` |
-| `db.ts` | Pool singleton + DDL: 12 `CREATE TABLE IF NOT EXISTS` + expired-session purge |
+| `db.ts` | Pool singleton + DDL: 12 `CREATE TABLE IF NOT EXISTS` + idempotent `UNIQUE(product_id, user_id)` on `reviews` + expired-session purge |
 | `seed.ts` | `seedData()`: 6 users, 4 categories, 8 sizes, 15 products, inventory, 10 reviews, 12 orders + history |
 | `app.ts` | `createApp()`, `express.json()`, route registration, Vite-middleware (dev) vs `dist/` static + SPA fallback (prod); no permissive CORS |
 | `auth.ts` | `getAuthenticatedUser` + `requireAuth`/`isSeller`/`isAdmin` middleware |
 | `routes/public.ts` | Health, products (validated/inlined LIMIT), categories, sizes, stores |
 | `routes/auth.ts` | Login/register/me/logout (role allowlist, email+password validation) |
 | `routes/cart.ts` | Cart ×4 + checkout transaction |
-| `routes/orders.ts` | orders/my, orders/details, reviews, simulate, cancel, payment/history |
-| `routes/seller.ts` | Seller dashboard, products CRUD, reports, reviews, orders, profile |
-| `routes/admin.ts` | Analytics + admin dashboard, users, reports, categories, sizes |
+| `routes/orders.ts` | orders/my, orders/details, verified one-per-user reviews, simulate, restocking cancel, payment/history |
+| `routes/seller.ts` | Seller dashboard, products CRUD, reports, reviews, orders + payment confirmation, profile |
+| `routes/admin.ts` | Analytics + admin dashboard, users, reports, categories, sizes, order payment confirmation |
 | `server.ts` | Thin bootstrap only (~19 lines) |
 
 ## Frontend ↔ backend contract

@@ -41,7 +41,7 @@ All paths verified against `server/` route registrations (`server/routes/*.ts`, 
 | GET | `/api/orders/my` | own orders, each with ≤3 preview items |
 | GET | `/api/orders/details?id=` | owner, or seller with item in order, or admin; includes `items[]` + `history[]` |
 | POST | `/api/orders/simulate?id=` | advances pending→confirmed→shipped→delivered; customer: own only; seller: own-item only; admin: any |
-| PUT | `/api/orders/cancel?id=` | owner only; allowed from `pending`/`confirmed` |
+| PUT | `/api/orders/cancel?id=` | owner only; allowed from `pending`/`confirmed`; restocks each line into `inventory` in the same transaction + `cancelled` history row; double-cancel → 400 without double-restock |
 | POST | `/api/reviews` | `{product_id, rating 1–5, comment?}`; requires `delivered` order containing product → 400 otherwise; one per `(product_id,user_id)` → 400 on duplicate (`UNIQUE` backstop; legacy `user_id NULL` rows exempt) |
 | GET | `/api/payment/history?order_id=` | owner or admin; returns `order_status_history` rows |
 
@@ -79,5 +79,5 @@ All paths verified against `server/` route registrations (`server/routes/*.ts`, 
 | DELETE | `/api/admin/sizes/:id` | delete (400 if inventory uses it; no update route) |
 | PUT | `/api/admin/orders/payment` | `{order_id, payment_status ∈ paid/refunded}`; admin-only, any order; idempotent re-mark; appends `order_status_history` |
 
-Count: ~35 `/api/*` route registrations (54 `app.*` matches include static/PWA fallbacks).
+Count: ~37 `/api/*` route registrations (54 `app.*` matches include static/PWA fallbacks).
 No pagination anywhere; list endpoints return full sets.

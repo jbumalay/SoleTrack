@@ -19,10 +19,12 @@
 5. **Track:** `getMyOrders` → `GET /api/orders/my` (each order carries up to 3 preview
    items); `getOrderDetails` → `GET /api/orders/details?id=` (items + status history).
    Customer can `cancelOrder` (`PUT /api/orders/cancel?id=`) only while
-   `pending`/`confirmed`; `simulateOrderProgress` (`POST /api/orders/simulate?id=`)
+   `pending`/`confirmed` (restocks each line into `inventory` in the same transaction + `cancelled` history row); `simulateOrderProgress` (`POST /api/orders/simulate?id=`)
    advances `pending → confirmed → shipped → delivered` (demo helper, owner-scoped).
 6. **Review:** `POST /api/reviews` `{product_id, rating 1–5, comment}`; display name
-   derived from `first_name/last_name` or username.
+   derived from `first_name/last_name` or username; requires a `delivered`
+   order containing the product (400 otherwise) and one review per user per
+   product (duplicate → 400).
 
 ## 2. Seller journey (approve → product → order)
 
@@ -40,7 +42,9 @@
    each with own items only); `PUT /api/seller/orders/status`
    `{order_id, status}` — validates against
    `pending/confirmed/shipped/delivered/cancelled`, refuses changes to
-   `delivered`/`cancelled`, requires at least one own item.
+   `delivered`/`cancelled`, requires at least one own item;
+   `PUT /api/seller/orders/payment` `{order_id, payment_status ∈ paid/refunded}`
+   (same own-item check, 403 otherwise; idempotent re-mark; appends history).
 5. **Reports/reviews:** `GET /api/seller/reports/sales?days=` (revenue/orders/AOV/
    customers/units + trend + category breakdown + top 10); `GET /api/seller/reviews?product_id=`
    (ownership-checked); dashboard adds low-stock count (threshold 30 units/product).
@@ -58,8 +62,11 @@
    inventory → size) with 400.
 4. **Reports/analytics:** `GET /api/admin/reports` (revenue excl. cancelled, 30-day
    trend, top-10 seller breakdown); `GET /api/analytics/stats` (older flat totals).
+   `PUT /api/admin/orders/payment` `{order_id, payment_status ∈ paid/refunded}`
+   (admin-only, any order; idempotent re-mark; appends history).
 5. **Order visibility:** admins bypass owner checks on `orders/details` and
-   `payment/history`.
+   `payment/history`; `payment_status` is visible in `orders/details` for
+   owner, owning seller, and admin.
 
 ## 4. Auth journey
 

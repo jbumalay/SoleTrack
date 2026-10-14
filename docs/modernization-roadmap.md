@@ -18,6 +18,8 @@ the rest are proposals. Nothing in P1–P3 is started unless marked.
    (config, db, seed, auth, utils, app, routes/*); see `decisions/0001-backend-split-strategy.md`.
 7. **Input validation** (zod or equivalent) on all write routes; constrain
    `orders.status`/`payment_status` (ENUM or check constraint + shared constants).
+   Partial progress: `payment_status` writes allowlisted to `paid`/`refunded`,
+   `POST /api/reviews` verified + `UNIQUE(product_id, user_id)` backstop.
 8. ✅ **Fixed `LIMIT ?` binding** — validated/clamped + inlined (`server/utils.ts`, `server/routes/public.ts`); live-DB smoke test still pending (XAMPP).
 9. **Cart upsert race** — unique `(user_id, product_id, size_id)` + `ON DUPLICATE KEY`
    instead of read-then-write.

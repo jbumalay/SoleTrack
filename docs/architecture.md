@@ -62,7 +62,20 @@ and at bootstrap. Session lifetime: 24h. No cookies, no refresh tokens.
 - Checkout is transactional (`BEGIN` → stock check → insert order/items/history →
   decrement inventory with `stock_quantity >= ?` guard → clear cart → `COMMIT`;
   rollback on any failure).
+- Cancel is transactional too (customer-owned, `pending`/`confirmed` only):
+  reread `order_items`, restock each line into `inventory`, then set
+  `cancelled` + history row; terminal states reject with 400.
+- Payment confirmation is transactional (`paid`/`refunded` allowlist): the
+  owning seller (own-item check, 403 otherwise) or any admin marks the order;
+  re-marking the same value succeeds idempotently without a duplicate
+  history row.
+- Reviews are verified: `POST /api/reviews` requires a `delivered` order
+  containing the product and rejects a second review per `(product_id,
+  user_id)` with 400 (`UNIQUE` key as backstop; legacy `user_id NULL` rows
+  exempt).
 - Soft deletes: `users.deleted_at`, `products.deleted_at`, `inventory.deleted_at`;
   categories/sizes are hard-deleted with in-use guards.
 - PWA service worker caches catalog GETs (`NetworkFirst`, 10s timeout, 24h TTL) —
   fresh data when online, cache fallback offline; see `security-assessment.md`.
+- `order_status_history` carries both lifecycle transitions and payment
+  markers (`paid`/`refunded`); step-matching readers ignore the payment rows.
