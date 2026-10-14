@@ -332,11 +332,11 @@ export function registerOrderRoutes(app: Express): void {
           return;
         }
 
-        if (["shipped", "delivered", "cancelled"].includes(order.status)) {
+        if (["shipped", "delivered", "cancelled", "requested", "approved"].includes(order.status)) {
           await conn.rollback();
           res
             .status(400)
-            .json({ status: "error", message: "Cannot cancel order that is shipped, delivered, or already cancelled" });
+            .json({ status: "error", message: "Cannot cancel order that is shipped, delivered, cancelled, or in return" });
           return;
         }
 
@@ -368,6 +368,64 @@ export function registerOrderRoutes(app: Express): void {
         }
         console.error("Order cancel failed");
         res.status(500).json({ status: "error", message: "Failed to cancel order" });
+      } finally {
+        conn.release();
+      }
+    })
+  );
+
+  app.post(
+    "/api/orders/return",
+    asyncHandler(async (req, res) => {
+      const user = await getAuthenticatedUser(req);
+      if (!user) {
+        res.status(401).json({ status: "error", message: "Login required" });
+        return;
+      }
+
+      const orderId = parseId(req.query.id);
+      if (orderId === null) {
+        res.status(400).json({ status: "error", message: "Invalid ID" });
+        return;
+      }
+
+      const pool = getPool();
+      const conn = await pool.getConnection();
+      try {
+        await conn.beginTransaction();
+        const [orderRows] = (await conn.execute(
+          "SELECT status FROM orders WHERE order_id = ? AND user_id = ? FOR UPDATE",
+          [orderId, user.user_id]
+        )) as unknown as [Array<{ status: string }>, unknown];
+        const order = orderRows[0];
+        if (!order) {
+          await conn.rollback();
+          res.status(404).json({ status: "error", message: "Order not found" });
+          return;
+        }
+
+        if (order.status !== "delivered") {
+          await conn.rollback();
+          res.status(400).json({ status: "error", message: "Only delivered orders can be returned" });
+          return;
+        }
+
+        await conn.execute("UPDATE orders SET status = 'requested' WHERE order_id = ? AND user_id = ?", [
+          orderId,
+          user.user_id,
+        ]);
+        await conn.execute("INSERT INTO order_status_history (order_id, status) VALUES (?, 'requested')", [orderId]);
+
+        await conn.commit();
+        res.json({ status: "success", message: "Return requested" });
+      } catch {
+        try {
+          await conn.rollback();
+        } catch {
+          // ignore
+        }
+        console.error("Order return request failed");
+        res.status(500).json({ status: "error", message: "Failed to request return" });
       } finally {
         conn.release();
       }
