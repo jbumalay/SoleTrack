@@ -9,10 +9,10 @@ All paths verified against `server/` route registrations (`server/routes/*.ts`, 
 | Method | Path | Query / body | Notes |
 |---|---|---|---|
 | GET | `/api/health` | — | `{status, message}` liveness |
-| GET | `/api/products` | `?id=` single with `reviews[]`,`inventory[]`; else `?category=&limit=&seller_id=` list with stock/rating aggregates | `limit` validated/clamped (max 100) + inlined; `limit=abc` → 400 |
+| GET | `/api/products` | `?id=` single with `reviews[]`,`inventory[]`; else list with stock/rating aggregates: legacy `?category=&limit=&seller_id=` → bare array; catalog mode `?search=&sort=newest\|price_asc\|price_desc\|rating&page=&limit=` (default `page=1,limit=12`, max 100) → `{items[],page,total_pages,total_items}` | `limit` validated/clamped (max 100) + inlined; `limit=abc` → 400; `sort`/`page` invalid → 400; `search` matches name/description/brand (`LIKE %..%`); `limit` alone keeps bare array for back-compat |
 | GET | `/api/categories` | — | all rows |
 | GET | `/api/sizes` | — | ordered by `size_id` |
-| GET | `/api/stores` | — | active sellers + `product_count` |
+| GET | `/api/stores` | legacy (no params) → bare array; paged `?search=&page=&limit=` (defaults `page=1,limit=12`) → `{items[],page,total_pages,total_items}`; always `ORDER BY brand_name ASC` | `search` matches brand/username/description/location; invalid `page`/`limit` → 400 |
 | GET | `/api/stores/:id` | path id | profile + active products; 404 if not seller |
 
 ## Auth

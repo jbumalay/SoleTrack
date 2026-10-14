@@ -44,6 +44,19 @@ export function parseListLimit(raw: unknown, max: number = MAX_LIST_LIMIT): numb
   return Math.min(Math.floor(n), max);
 }
 
+/**
+ * Validate a client-supplied page number and return a safe 1-based integer,
+ * or undefined when absent. Invalid values (abc, 0, negatives, fractions
+ * without an integer part) yield undefined so callers return 400 when the
+ * `page` param was explicitly sent.
+ */
+export function parsePage(raw: unknown): number | undefined {
+  if (raw === undefined || raw === null || raw === "") return undefined;
+  const n = typeof raw === "number" ? raw : Number.parseInt(String(raw), 10);
+  if (!Number.isFinite(n) || Math.floor(n) <= 0) return undefined;
+  return Math.floor(n);
+}
+
 /** Validate the seller-reports `days` window. Preserves the old default of 7. */
 export function parseDays(raw: unknown, fallback = 7, max = 365): number {
   const n = typeof raw === "number" ? raw : Number.parseInt(String(raw), 10);
