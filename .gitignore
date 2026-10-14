@@ -44,6 +44,10 @@ desktop.ini
 # TypeScript build info
 *.tsbuildinfo
 
+# Runtime-uploaded product images (public/uploads/ holds the empty mount dir)
+public/uploads/*
+!public/uploads/.gitkeep
+
 # Local-only dev planning docs (never commit)
 dev-docs/
 
