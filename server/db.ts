@@ -124,7 +124,7 @@ export async function initDb(): Promise<void> {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
   `);
 
-  // A3: one review per user per product. MySQL UNIQUE allows multiple NULLs,
+  // One review per user per product. MySQL UNIQUE allows multiple NULLs,
   // so legacy seed rows (user_id NULL) are unaffected. Idempotent: dedupe dirty
   // dev DBs (keep earliest review_id), then add the key only if missing.
   await pool.query(`
