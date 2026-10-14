@@ -1,16 +1,20 @@
 import { useState, useMemo, useEffect } from "react";
 import { useNavigate, useSearchParams, Link } from "react-router";
-import { Filter, SlidersHorizontal, LayoutGrid, X, Loader2 } from "lucide-react";
+import { SlidersHorizontal, LayoutGrid, X, Loader2 } from "lucide-react";
 import { ProductCard } from "@/components/ProductCard";
 import { motion, AnimatePresence } from "motion/react";
 import { apiService } from "@/services/api";
+import { normalizeList } from "@/utils/normalizeList";
+import { toast } from "sonner";
 
 export function Products() {
+  const navigate = useNavigate();
+  void navigate;
   const [searchParams, setSearchParams] = useSearchParams();
   const [products, setProducts] = useState<any[]>([]);
   const [categories, setCategories] = useState<{category_id: number, category_name: string}[]>([]);
   const [loading, setLoading] = useState(true);
-  
+
   const [selectedCategory, setSelectedCategory] = useState(searchParams.get("category") || "All");
   const [selectedSize, setSelectedSize] = useState<string | null>(null);
   const [inStockOnly, setInStockOnly] = useState(false);
@@ -19,18 +23,24 @@ export function Products() {
   const [showFilters, setShowFilters] = useState(false);
   const searchQuery = searchParams.get("search") || "";
 
+  // Sync URL -> state (category + search drive state)
+  useEffect(() => {
+    setSelectedCategory(searchParams.get("category") || "All");
+  }, [searchParams]);
+
   useEffect(() => {
     async function fetchData() {
       setLoading(true);
       try {
         const [prodRes, catRes] = await Promise.all([
-          apiService.getProducts(),
+          apiService.getProducts({ limit: 100 }),
           apiService.getCategories()
         ]);
-        
-        if (prodRes.status === "success") setProducts(prodRes.data);
-        if (catRes.status === "success") setCategories(catRes.data);
-      } catch (error) {
+
+        if (prodRes.status === "success") setProducts(normalizeList(prodRes.data));
+        if (catRes.status === "success") setCategories(normalizeList<{category_id: number, category_name: string}>(catRes.data));
+      } catch (error: unknown) {
+        toast.error(error instanceof Error ? error.message : "Failed to load catalog");
         console.error("Failed to fetch products/categories:", error);
       } finally {
         setLoading(false);
@@ -68,7 +78,7 @@ export function Products() {
     }
 
     if (selectedSize) {
-      filtered = filtered.filter(p => 
+      filtered = filtered.filter(p =>
         p.inventory?.some((i: any) => i.size_value?.toString() === selectedSize)
       );
     }
@@ -98,17 +108,27 @@ export function Products() {
     }
 
     return sorted;
-  }, [products, selectedCategory, priceRange, sortBy, searchQuery]);
+  }, [products, selectedCategory, selectedSize, inStockOnly, priceRange, sortBy, searchQuery]);
 
   const handleCategoryChange = (category: string) => {
     setSelectedCategory(category);
+    const newParams = new URLSearchParams(searchParams);
     if (category !== "All") {
-      setSearchParams({ category });
+      newParams.set("category", category);
     } else {
-      const newParams = new URLSearchParams(searchParams);
       newParams.delete("category");
-      setSearchParams(newParams);
     }
+    // preserve ?search=
+    setSearchParams(newParams);
+  };
+
+  const handleResetAll = () => {
+    setSelectedCategory("All");
+    setSelectedSize(null);
+    setInStockOnly(false);
+    setPriceRange([0, 10000]);
+    setSortBy("featured");
+    setSearchParams({});
   };
 
   const categoryNames = useMemo(() => ["All", ...categories.map(c => c.category_name)], [categories]);
@@ -129,9 +149,9 @@ export function Products() {
                 {searchQuery ? `"${searchQuery}"` : "Heritage Footwear"}
               </h1>
             </div>
-            
+
             <div className="flex items-center gap-3">
-               <select 
+               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value)}
                 className="bg-white border border-gray-200 px-4 py-3 rounded-xl shadow-sm text-sm font-bold text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary appearance-none pr-10 relative"
@@ -144,23 +164,24 @@ export function Products() {
               </select>
             </div>
           </div>
-          
+
           <div className="flex flex-wrap items-center gap-2">
-             <button 
+             <button
                 className="lg:hidden flex items-center gap-2 px-6 py-3 bg-gray-900 text-white rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-gray-800 transition-colors shadow-lg shadow-gray-200"
                 onClick={() => setShowFilters(!showFilters)}
               >
                 <SlidersHorizontal className="w-4 h-4" />
                 Filters
               </button>
-              
+
               {selectedCategory !== "All" && (
                 <div className="flex items-center gap-2 bg-primary/10 text-primary px-4 py-2 rounded-xl text-xs font-bold border border-primary/20">
                   {selectedCategory}
                   <X className="w-3 h-3 cursor-pointer" onClick={() => handleCategoryChange("All")} />
                 </div>
               )}
-              
+              <span className="hidden"><LayoutGrid className="w-4 h-4" /></span>
+
               <div className="ml-auto text-[10px] font-black uppercase tracking-widest text-gray-400">
                 {filteredAndSortedProducts.length} items found
               </div>
@@ -180,8 +201,8 @@ export function Products() {
                       key={category}
                       onClick={() => handleCategoryChange(category)}
                       className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all ${
-                        selectedCategory === category 
-                          ? 'bg-primary text-white shadow-lg shadow-primary/20' 
+                        selectedCategory === category
+                          ? 'bg-primary text-white shadow-lg shadow-primary/20'
                           : 'text-gray-600 hover:bg-gray-50'
                       }`}
                     >
@@ -220,8 +241,8 @@ export function Products() {
                       key={size}
                       onClick={() => setSelectedSize(selectedSize === size ? null : size)}
                       className={`py-2 rounded-lg border text-[10px] font-black transition-all ${
-                        selectedSize === size 
-                          ? 'border-primary bg-primary text-white shadow-md' 
+                        selectedSize === size
+                          ? 'border-primary bg-primary text-white shadow-md'
                           : 'border-gray-100 hover:border-gray-200 text-gray-600'
                       }`}
                     >
@@ -234,7 +255,7 @@ export function Products() {
               {/* Availability */}
               <div className="mb-10">
                 <label className="flex items-center gap-3 cursor-pointer group">
-                  <div 
+                  <div
                     onClick={() => setInStockOnly(!inStockOnly)}
                     className={`w-10 h-6 rounded-full transition-all relative ${inStockOnly ? 'bg-primary' : 'bg-gray-200'}`}
                   >
@@ -243,15 +264,9 @@ export function Products() {
                   <span className="text-xs font-black uppercase tracking-widest text-gray-600 group-hover:text-primary transition-colors">In Stock Only</span>
                 </label>
               </div>
-              
-              <button 
-                onClick={() => {
-                  setSelectedCategory("All");
-                  setSelectedSize(null);
-                  setInStockOnly(false);
-                  setPriceRange([0, 10000]);
-                  setSearchParams({});
-                }}
+
+              <button
+                onClick={handleResetAll}
                 className="w-full mt-4 text-[10px] font-black uppercase tracking-widest text-gray-400 hover:text-red-500 transition-colors py-2 border-t border-gray-50 pt-6"
               >
                 Clear All filters
@@ -268,28 +283,28 @@ export function Products() {
                   <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Loading catalog...</p>
                 </div>
               ) : filteredAndSortedProducts.length === 0 ? (
-                <motion.div 
+                <motion.div
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   className="text-center py-32 bg-white rounded-[2rem] border-2 border-dashed border-gray-100"
                 >
                   <p className="text-gray-400 font-bold uppercase tracking-widest mb-4">No treasures found</p>
-                  <button 
-                    onClick={() => handleCategoryChange("All")}
+                  <button
+                    onClick={handleResetAll}
                     className="text-primary font-black text-sm underline underline-offset-4"
                   >
                     Reset all filters
                   </button>
                 </motion.div>
               ) : (
-                <motion.div 
+                <motion.div
                   layout
                   className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-8"
                 >
                    {filteredAndSortedProducts.map((product, index) => (
                     <motion.div
                       layout
-                      key={product.product_id}
+                      key={product.product_id ?? product.id ?? index}
                       initial={{ opacity: 0, scale: 0.95 }}
                       animate={{ opacity: 1, scale: 1 }}
                       transition={{ duration: 0.3, delay: index * 0.05 }}
@@ -303,19 +318,19 @@ export function Products() {
           </div>
         </div>
       </div>
-      
+
       {/* Mobile Filters Modal */}
       <AnimatePresence>
         {showFilters && (
           <>
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100]"
               onClick={() => setShowFilters(false)}
             />
-            <motion.div 
+            <motion.div
               initial={{ x: '100%' }}
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
@@ -338,8 +353,8 @@ export function Products() {
                         key={category}
                         onClick={() => handleCategoryChange(category)}
                         className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all border ${
-                          selectedCategory === category 
-                            ? 'bg-primary border-primary text-white shadow-lg shadow-primary/20' 
+                          selectedCategory === category
+                            ? 'bg-primary border-primary text-white shadow-lg shadow-primary/20'
                             : 'border-gray-200 text-gray-600'
                         }`}
                       >
@@ -357,8 +372,8 @@ export function Products() {
                         key={size}
                         onClick={() => setSelectedSize(selectedSize === size ? null : size)}
                         className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all border ${
-                          selectedSize === size 
-                            ? 'bg-primary border-primary text-white shadow-lg shadow-primary/20' 
+                          selectedSize === size
+                            ? 'bg-primary border-primary text-white shadow-lg shadow-primary/20'
                             : 'border-gray-200 text-gray-600'
                         }`}
                       >
@@ -367,11 +382,11 @@ export function Products() {
                     ))}
                   </div>
                 </div>
-                
+
                 <div>
                   <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-400 mb-6">Availability</h3>
                   <label className="flex items-center gap-3 cursor-pointer group">
-                    <div 
+                    <div
                       onClick={() => setInStockOnly(!inStockOnly)}
                       className={`w-10 h-6 rounded-full transition-all relative ${inStockOnly ? 'bg-primary' : 'bg-gray-200'}`}
                     >
@@ -397,9 +412,9 @@ export function Products() {
                     <span className="text-primary">₱{priceRange[1].toLocaleString()}</span>
                   </div>
                 </div>
-                
+
                 <div className="sticky bottom-0 bg-white pt-4 pb-0">
-                  <button 
+                  <button
                     onClick={() => setShowFilters(false)}
                     className="w-full bg-gray-950 text-white py-5 rounded-2xl font-black uppercase tracking-widest text-xs shadow-xl shadow-gray-200"
                   >

@@ -24,24 +24,35 @@ import {
 } from 'recharts';
 import { motion } from "motion/react";
 import { Link } from "react-router";
+import { normalizeList } from "@/utils/normalizeList";
+import { toast } from "sonner";
 
 export default function AdminDashboard() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchDashboard = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await apiService.getAdminDashboard();
+      if (response.status === "success") {
+        setData(response.data);
+      } else {
+        setError(response.message || "Failed to load dashboard");
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to fetch admin dashboard";
+      setError(message);
+      toast.error(message);
+      console.error("Failed to fetch admin dashboard:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    async function fetchDashboard() {
-      try {
-        const response = await apiService.getAdminDashboard();
-        if (response.status === "success") {
-          setData(response.data);
-        }
-      } catch (error) {
-        console.error("Failed to fetch admin dashboard:", error);
-      } finally {
-        setLoading(false);
-      }
-    }
     fetchDashboard();
   }, []);
 
@@ -51,8 +62,22 @@ export default function AdminDashboard() {
     </div>
   );
 
+  if (error) return (
+    <div className="p-10 flex flex-col items-center justify-center min-h-[400px] text-center space-y-6">
+      <div className="w-20 h-20 bg-red-50 rounded-3xl flex items-center justify-center text-red-500">
+        <AlertCircle size={40} />
+      </div>
+      <div>
+        <h2 className="text-xl font-black italic tracking-tighter text-gray-900 uppercase">Dashboard Failed</h2>
+        <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mt-2">{error}</p>
+      </div>
+      <button onClick={fetchDashboard} className="px-8 py-4 bg-gray-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-primary transition-all">Retry</button>
+    </div>
+  );
+
   if (!data) return null;
 
+  const recentOrders = normalizeList(data.recent_orders) ?? [];
   const stats = [
     { label: "Total Platform Users", value: data.total_users, icon: Users, color: "bg-blue-50 text-blue-600" },
     { label: "Active Customers", value: data.customer_count, icon: UserCheck, color: "bg-green-50 text-green-600" },
@@ -123,11 +148,11 @@ export default function AdminDashboard() {
                  </tr>
                </thead>
                <tbody className="divide-y divide-gray-50">
-                 {data.recent_orders.map((order: any) => (
+                 {recentOrders.map((order: any) => (
                    <tr key={order.order_id} className="hover:bg-gray-50 transition-colors">
                       <td className="px-8 py-6 text-xs font-black italic text-gray-900">#{order.order_id}</td>
                       <td className="px-8 py-6 text-xs font-bold text-gray-600">{order.first_name} {order.last_name}</td>
-                      <td className="px-8 py-6 text-xs font-black italic text-gray-900">₱{order.total_amount.toLocaleString()}</td>
+                      <td className="px-8 py-6 text-xs font-black italic text-gray-900">₱{Number(order.total_amount ?? 0).toLocaleString()}</td>
                       <td className="px-8 py-6">
                         <span className={`px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest ${
                           order.status === 'delivered' ? 'bg-green-100 text-green-700' :

@@ -2,7 +2,8 @@ import { useState, useEffect } from "react";
 import { apiService } from "@/services/api";
 import { motion } from "motion/react";
 import { Link } from "react-router";
-import { 
+import { toast } from "sonner";
+import {
   BarChart3, 
   Download, 
   Calendar, 
@@ -36,29 +37,37 @@ const COLORS = ['#D4B483', '#48A9A6', '#C1666B', '#4281A4', '#FE938C'];
 export default function SellerReports() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [days, setDays] = useState(7);
   const [isRangeOpen, setIsRangeOpen] = useState(false);
 
-  useEffect(() => {
-    async function fetchReports() {
-      setLoading(true);
-      try {
-        const response = await apiService.getSellerReports(days);
-        if (response.status === "success") {
-          setData(response.data);
-        }
-      } catch (error) {
-        console.error("Reports error:", error);
-      } finally {
-        setLoading(false);
+  async function fetchReports() {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await apiService.getSellerReports(days);
+      if (response.status === "success") {
+        setData(response.data);
+      } else {
+        setError(response.message || "Failed to load reports");
       }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Reports error";
+      setError(message);
+      toast.error(message);
+      console.error("Reports error:", err);
+    } finally {
+      setLoading(false);
     }
+  }
+
+  useEffect(() => {
     fetchReports();
   }, [days]);
 
   const exportToCSV = () => {
-    if (!data) return;
-    const items = data.topSelling;
+    if (!data || !Array.isArray(data.topSelling)) return;
+    const items = Array.isArray(data.topSelling) ? data.topSelling : [];
     const header = ["Product Name", "Units Sold", "Revenue"];
     const rows = items.map((i: any) => [i.product_name, i.units_sold, i.revenue]);
     
@@ -75,7 +84,7 @@ export default function SellerReports() {
     document.body.removeChild(link);
   };
 
-  if (loading || !data) {
+  if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="w-12 h-12 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
@@ -83,8 +92,20 @@ export default function SellerReports() {
     );
   }
 
+  if (error || !data) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen text-center gap-4 p-10">
+        <p className="text-[10px] font-black uppercase tracking-widest text-red-500">Reports unavailable</p>
+        <p className="text-sm text-gray-500 font-medium">{error || "No report data."}</p>
+        <button onClick={fetchReports} className="px-8 py-4 bg-gray-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-primary transition-all">Retry</button>
+      </div>
+    );
+  }
+
   const metrics = data.metrics || {};
-  const topSelling = data.topSelling || [];
+  const topSelling: any[] = Array.isArray(data.topSelling) ? data.topSelling : [];
+  const trend: any[] = Array.isArray(data.trend) ? data.trend : [];
+  const categoryBreakdown: any[] = Array.isArray(data.categoryBreakdown) ? data.categoryBreakdown : [];
   const maxRevenue = topSelling.length > 0 ? topSelling[0].revenue : 1;
 
   const metricStats = [
@@ -174,7 +195,7 @@ export default function SellerReports() {
           </div>
           <div className="h-[400px] w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={data.trend}>
+              <AreaChart data={trend}>
                 <defs>
                   <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#D4B483" stopOpacity={0.2}/>
@@ -220,7 +241,7 @@ export default function SellerReports() {
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
-                  data={data.categoryBreakdown}
+                  data={categoryBreakdown}
                   cx="50%"
                   cy="50%"
                   innerRadius={80}
@@ -229,7 +250,7 @@ export default function SellerReports() {
                   dataKey="value"
                   nameKey="category_name"
                 >
-                  {data.categoryBreakdown.map((entry: any, index: number) => (
+                  {categoryBreakdown.map((entry: any, index: number) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>
@@ -238,15 +259,17 @@ export default function SellerReports() {
             </ResponsiveContainer>
           </div>
           <div className="space-y-4 mt-8">
-            {data.categoryBreakdown.map((cat: any, idx: number) => (
+            {categoryBreakdown.length > 0 ? categoryBreakdown.map((cat: any, idx: number) => (
               <div key={cat.category_name} className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[idx % COLORS.length] }} />
                   <span className="text-[10px] font-black uppercase tracking-widest text-gray-500">{cat.category_name}</span>
                 </div>
-                <span className="text-[10px] font-black text-gray-900 italic">₱{cat.value.toLocaleString()}</span>
+                <span className="text-[10px] font-black text-gray-900 italic">₱{Number(cat.value ?? 0).toLocaleString()}</span>
               </div>
-            ))}
+            )) : (
+              <p className="text-[10px] font-black uppercase tracking-widest text-gray-300 text-center py-6">No category data yet</p>
+            )}
           </div>
         </div>
       </div>

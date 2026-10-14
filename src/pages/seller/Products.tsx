@@ -16,10 +16,12 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { LOW_STOCK_THRESHOLD } from "@/constants";
+import { normalizeList } from "@/utils/normalizeList";
 
 export default function SellerProducts() {
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [productSearch, setProductSearch] = useState("");
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -40,15 +42,24 @@ export default function SellerProducts() {
         apiService.getCategories(),
         apiService.getSizes()
       ]);
-      if (prodRes.status === "success") setProducts(prodRes.data);
-      if (catRes.status === "success") setCategories(catRes.data);
-      if (sizeRes.status === "success") setSizes(sizeRes.data);
-    } catch (error) {
+      if (prodRes.status === "success") setProducts(normalizeList(prodRes.data) ?? []);
+      if (catRes.status === "success") setCategories(normalizeList(catRes.data) ?? []);
+      if (sizeRes.status === "success") setSizes(normalizeList(sizeRes.data) ?? []);
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : "Failed to load products");
+      setProducts([]);
       console.error("Fetch products error:", error);
     } finally {
       setLoading(false);
     }
   }
+
+    const visibleProducts = productSearch.trim()
+    ? (products ?? []).filter((pd: any) =>
+        (pd.product_name ?? "").toLowerCase().includes(productSearch.toLowerCase()) ||
+        (pd.category_name ?? "").toLowerCase().includes(productSearch.toLowerCase())
+      )
+    : (products ?? []);
 
   const handleDelete = async (id: number) => {
     if (window.confirm("Are you sure you want to retire this heritage craft? (Soft deletion only)")) {
@@ -178,7 +189,7 @@ export default function SellerProducts() {
           </div>
           <div>
             <p className="text-[9px] font-black uppercase tracking-widest text-gray-400">Low Stock Warning</p>
-            <p className="text-2xl font-black italic">{products.filter(p => p.total_stock < LOW_STOCK_THRESHOLD).length}</p>
+            <p className="text-2xl font-black italic">{(products ?? []).filter(p => p.total_stock < LOW_STOCK_THRESHOLD).length}</p>
           </div>
         </div>
       </div>
@@ -190,7 +201,7 @@ export default function SellerProducts() {
              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
              <input 
               type="text" 
-              placeholder="Search artifacts..." 
+              placeholder="Search artifacts..." value={productSearch} onChange={(e) => setProductSearch(e.target.value)} 
               className="pl-12 pr-6 py-3 bg-gray-50 border-none rounded-2xl text-xs font-bold w-full md:w-80 focus:ring-2 focus:ring-primary/20 placeholder:text-gray-300 transition-all"
              />
           </div>
@@ -219,11 +230,11 @@ export default function SellerProducts() {
                     <div className="w-8 h-8 border-3 border-primary/20 border-t-primary rounded-full animate-spin mx-auto" />
                   </td>
                 </tr>
-              ) : products.length === 0 ? (
+              ) : visibleProducts.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="p-20 text-center font-black italic uppercase text-gray-400 tracking-widest text-xs">No artifacts revealed in your collection yet.</td>
+                  <td colSpan={5} className="p-20 text-center font-black italic uppercase text-gray-400 tracking-widest text-xs">{productSearch.trim() ? "No artifacts match your search." : "No artifacts revealed in your collection yet."}</td>
                 </tr>
-              ) : products.map((product) => (
+              ) : visibleProducts.map((product) => (
                 <tr key={product.product_id} className="group hover:bg-gray-50 transition-colors">
                   <td className="px-8 py-6">
                     <div className="flex items-center gap-6">

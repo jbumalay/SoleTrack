@@ -50,3 +50,59 @@ export function parseDays(raw: unknown, fallback = 7, max = 365): number {
   if (!Number.isFinite(n) || Math.floor(n) <= 0) return fallback;
   return Math.min(Math.floor(n), max);
 }
+
+/**
+ * Validate a client-supplied integer ID (query/route param).
+ * Accepts only strings matching /^\d+$/ with value > 0, else null.
+ * Callers must return 400 { status: "error", message: "Invalid ID" } on null.
+ */
+export function parseId(raw: unknown): number | null {
+  if (raw === undefined || raw === null) return null;
+  if (Array.isArray(raw)) {
+    if (raw.length === 0) return null;
+    return parseId(raw[0]);
+  }
+  let s: string;
+  if (typeof raw === "number") {
+    if (!Number.isInteger(raw)) return null;
+    s = String(raw);
+  } else if (typeof raw === "string") {
+    s = raw.trim();
+  } else {
+    s = String(raw).trim();
+  }
+  if (!/^\d+$/.test(s)) return null;
+  const n = Number.parseInt(s, 10);
+  if (!Number.isSafeInteger(n) || n <= 0) return null;
+  return n;
+}
+
+/** Shared email pattern for admin/seller validation. */
+export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** True when a mysql2 error is a duplicate-key violation. */
+export function isDupEntry(err: unknown): boolean {
+  const code = (err as { code?: unknown })?.code;
+  return code === "ER_DUP_ENTRY";
+}
+
+/** True when a mysql2 error is a missing FK reference. */
+export function isNoRefRow(err: unknown): boolean {
+  const code = (err as { code?: unknown })?.code;
+  return (
+    code === "ER_NO_REFERENCED_ROW" ||
+    code === "ER_NO_REFERENCED_ROW_2" ||
+    code === "ER_NO_REFERENCED_ROW_21"
+  );
+}
+
+/**
+ * Map a caught DB error to a safe HTTP status + message.
+ * Never echoes err.message (may contain SQL text).
+ */
+export function mapDbError(err: unknown, fallback = "Database error"): { http: number; message: string } {
+  if (isDupEntry(err)) return { http: 409, message: "Already exists" };
+  if (isNoRefRow(err)) return { http: 400, message: "Invalid reference" };
+  void fallback;
+  return { http: 400, message: fallback };
+}

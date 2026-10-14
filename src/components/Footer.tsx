@@ -1,7 +1,30 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { Facebook, Instagram, Twitter, Footprints } from "lucide-react";
+import { apiService } from "@/services/api";
+import { normalizeList } from "@/utils/normalizeList";
 
 export function Footer() {
+  const [categories, setCategories] = useState<{ category_id: number; category_name: string }[]>([]);
+
+  useEffect(() => {
+    let mounted = true;
+    apiService.getCategories()
+      .then((res) => {
+        if (!mounted) return;
+        if (res.status === "success") setCategories(normalizeList<{ category_id: number; category_name: string }>(res.data));
+      })
+      .catch(() => {});
+    return () => { mounted = false; };
+  }, []);
+
+  const shopLinks = categories.length > 0
+    ? categories.slice(0, 4).map((c) => ({ label: c.category_name, to: `/products?category=${encodeURIComponent(c.category_name)}` }))
+    : [
+        { label: "All Products", to: "/products" },
+        { label: "Stores", to: "/stores" },
+      ];
+
   return (
     <footer className="bg-gray-950 text-gray-400 mt-auto">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
@@ -24,10 +47,9 @@ export function Footer() {
           <div>
             <h3 className="font-semibold text-white mb-4">Shop</h3>
             <ul className="space-y-2 text-sm">
-              <li><Link to="/products?category=Traditional" className="hover:text-primary transition-colors">Traditional</Link></li>
-              <li><Link to="/products?category=Woven" className="hover:text-primary transition-colors">Woven</Link></li>
-              <li><Link to="/products?category=Casual" className="hover:text-primary transition-colors">Casual</Link></li>
-              <li><Link to="/products?category=Eco-Friendly" className="hover:text-primary transition-colors">Eco-Friendly</Link></li>
+              {shopLinks.map((l) => (
+                <li key={l.label}><Link to={l.to} className="hover:text-primary transition-colors">{l.label}</Link></li>
+              ))}
             </ul>
           </div>
 
@@ -35,6 +57,7 @@ export function Footer() {
             <h3 className="font-semibold text-white mb-4">Customer Service</h3>
             <ul className="space-y-2 text-sm">
               <li><Link to="/contact" className="hover:text-primary transition-colors">Contact Us</Link></li>
+              <li><Link to="/about" className="hover:text-primary transition-colors">About Us</Link></li>
             </ul>
           </div>
 
@@ -59,8 +82,8 @@ export function Footer() {
             © 2026 SoleTrack. All rights reserved. Made with ❤️ in Bicol.
           </p>
           <div className="flex space-x-6 text-xs uppercase tracking-widest">
-            <a href="#" className="hover:text-white transition-colors">Privacy Policy</a>
-            <a href="#" className="hover:text-white transition-colors">Terms of Service</a>
+            <Link to="/about" className="hover:text-white transition-colors">Privacy Policy</Link>
+            <Link to="/about" className="hover:text-white transition-colors">Terms of Service</Link>
           </div>
         </div>
       </div>

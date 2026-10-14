@@ -1,7 +1,10 @@
 import { useState, useEffect } from "react";
+import { Link } from "react-router";
 import { apiService } from "../services/api";
 import { StoreCard } from "../components/StoreCard";
 import { Store, Search } from "lucide-react";
+import { normalizeList } from "@/utils/normalizeList";
+import { toast } from "sonner";
 
 export function Stores() {
   const [stores, setStores] = useState<any[]>([]);
@@ -12,19 +15,25 @@ export function Stores() {
   useEffect(() => {
     apiService.getStores().then((res) => {
       if (res.status === "success") {
-        setStores(res.data);
-        setFiltered(res.data);
+        const list = normalizeList(res.data) ?? [];
+        setStores(list);
+        setFiltered(list);
       }
       setLoading(false);
-    }).catch(() => setLoading(false));
+    }).catch((err: unknown) => {
+      toast.error(err instanceof Error ? err.message : "Failed to load stores");
+      setStores([]);
+      setFiltered([]);
+      setLoading(false);
+    });
   }, []);
 
   useEffect(() => {
     if (!search.trim()) {
-      setFiltered(stores);
+      setFiltered(stores ?? []);
     } else {
       const q = search.toLowerCase();
-      setFiltered(stores.filter((s) => s.brand_name?.toLowerCase().includes(q) || s.location?.toLowerCase().includes(q)));
+      setFiltered((stores ?? []).filter((s) => s.brand_name?.toLowerCase().includes(q) || s.location?.toLowerCase().includes(q)));
     }
   }, [search, stores]);
 
@@ -64,15 +73,15 @@ export function Stores() {
           />
         </div>
 
-        {filtered.length === 0 ? (
+        {(filtered ?? []).length === 0 ? (
           <div className="text-center py-20">
             <Store className="w-16 h-16 text-gray-200 mx-auto mb-4" />
             <p className="text-sm font-bold text-gray-400 uppercase tracking-widest">No stores found</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {filtered.map((store) => (
-              <StoreCard key={store.user_id} store={store} />
+            {(filtered ?? []).map((store, idx) => (
+              <StoreCard key={store.seller_id ?? store.user_id ?? idx} store={store} />
             ))}
           </div>
         )}

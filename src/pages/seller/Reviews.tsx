@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { apiService } from "@/services/api";
 import { motion, AnimatePresence } from "motion/react";
 import { Star, MessageSquare, Package, ChevronRight, Inbox } from "lucide-react";
+import { normalizeList } from "@/utils/normalizeList";
+import { toast } from "sonner";
 
 function StarDisplay({ rating }: { rating: number }) {
   return (
@@ -29,11 +31,14 @@ export default function SellerReviews() {
       try {
         const res = await apiService.getSellerProducts();
         if (res.status === "success") {
-          const withReviews = res.data.filter((p: any) => Number(p.total_reviews) > 0);
-          const rest = res.data.filter((p: any) => Number(p.total_reviews) === 0);
+          const list = normalizeList(res.data) ?? [];
+          const withReviews = list.filter((p: any) => Number(p.total_reviews) > 0);
+          const rest = list.filter((p: any) => Number(p.total_reviews) === 0);
           setProducts([...withReviews, ...rest]);
           if (withReviews.length > 0) selectProduct(withReviews[0]);
         }
+      } catch {
+        toast.error("Failed to load products");
       } finally {
         setLoadingProducts(false);
       }
@@ -46,7 +51,7 @@ export default function SellerReviews() {
     setLoadingReviews(true);
     try {
       const res = await apiService.getSellerProductReviews(product.product_id);
-      if (res.status === "success") setReviews(res.data);
+      if (res.status === "success") setReviews(normalizeList(res.data) ?? []);
     } catch {
       setReviews([]);
     } finally {
@@ -59,7 +64,7 @@ export default function SellerReviews() {
 
   const ratingBuckets = [5, 4, 3, 2, 1].map((n) => ({
     star: n,
-    count: reviews.filter((r) => Math.round(Number(r.rating)) === n).length,
+    count: (Array.isArray(reviews) ? reviews : []).filter((r) => Math.round(Number(r.rating)) === n).length,
   }));
 
   return (
@@ -208,7 +213,7 @@ export default function SellerReviews() {
                             <div>
                               <p className="text-xs font-black italic text-gray-900">{review.customer_name || "Anonymous"}</p>
                               <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">
-                                {new Date(review.created_at).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}
+                                {new Date(review.created_at ?? Date.now()).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}
                               </p>
                             </div>
                           </div>

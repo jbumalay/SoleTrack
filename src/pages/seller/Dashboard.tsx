@@ -11,6 +11,7 @@ import {
   Plus
 } from "lucide-react";
 import { Link } from "react-router";
+import { toast } from "sonner";
 
 import { 
   LineChart, 
@@ -27,27 +28,46 @@ import {
 export default function SellerDashboard() {
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  async function fetchStats() {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await apiService.getSellerDashboard();
+      if (response.status === "success") {
+        setStats(response.data);
+      } else {
+        setError(response.message || "Failed to load dashboard");
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Dashboard error";
+      setError(message);
+      toast.error(message);
+      console.error("Dashboard error:", err);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    async function fetchStats() {
-      try {
-        const response = await apiService.getSellerDashboard();
-        if (response.status === "success") {
-          setStats(response.data);
-        }
-      } catch (error) {
-        console.error("Dashboard error:", error);
-      } finally {
-        setLoading(false);
-      }
-    }
     fetchStats();
   }, []);
 
-  if (loading || !stats) {
+  if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60rem]">
         <div className="w-12 h-12 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (error || !stats) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[40rem] text-center gap-4 p-10">
+        <p className="text-[10px] font-black uppercase tracking-widest text-red-500">Workshop unavailable</p>
+        <p className="text-sm text-gray-500 font-medium">{error || "No dashboard data."}</p>
+        <button onClick={fetchStats} className="px-8 py-4 bg-gray-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-primary transition-all">Retry</button>
       </div>
     );
   }
@@ -132,7 +152,7 @@ export default function SellerDashboard() {
           </div>
           
           <div className="h-[350px] w-full">
-            {stats.trend && stats.trend.length > 0 ? (
+            {Array.isArray(stats.trend) && stats.trend.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={stats.trend}>
                   <defs>
@@ -183,7 +203,7 @@ export default function SellerDashboard() {
              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-primary mb-10">Historical Benchmarks</p>
              
              <div className="space-y-8">
-               {stats.topSelling && stats.topSelling.length > 0 ? stats.topSelling.map((item: any, i: number) => (
+               {Array.isArray(stats.topSelling) && stats.topSelling.length > 0 ? stats.topSelling.map((item: any, i: number) => (
                  <div key={i} className="flex justify-between items-center">
                     <div className="flex flex-col">
                        <span className="text-[9px] font-black uppercase tracking-widest text-gray-500">#{i+1} artifact</span>

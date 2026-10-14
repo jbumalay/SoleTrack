@@ -30,7 +30,8 @@ as documented follow-ups. Nothing below invents runtime test results.
 - **No `.env` files exist** in the tree (only the new `.env.example` with placeholders)
   — nothing secret to have been committed.
 - **Binaries/artifacts:** `public/*.png` (PWA icons + screenshots) are **keep** —
-  required at runtime and explicitly not ignored. No `dist/`, no lockfile, no dumps,
+  required at runtime and explicitly not ignored. `dist/` is gitignored build output
+  (never committed); `package-lock.json` **is** tracked (intended). No dumps,
   no logs found. `scripts/*.mjs` + `public/icon-source.svg` are the PWA asset sources.
 - Seed PII is fictional demo data (Bicol-region names/addresses in `seedData`).
 

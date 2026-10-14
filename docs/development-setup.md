@@ -5,7 +5,8 @@
 - Node.js 20+ (`node -v`)
 - MySQL 8 / MariaDB 10 (XAMPP OK). Servers in this workspace are **OFF** by default —
   start MySQL/MariaDB first; **do not attempt app runs against a stopped server**.
-- No git repo, lockfile, or `.env` committed yet (all manual steps — see bottom).
+- Git repo with `main` + `develop` branches pushed to origin; `package-lock.json`
+  is tracked. `.env` is never committed (only `.env.example` with placeholders).
 
 ## 1. Environment
 

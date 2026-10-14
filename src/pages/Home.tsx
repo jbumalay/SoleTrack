@@ -4,6 +4,7 @@ import { ProductCard } from "@/components/ProductCard";
 import { motion } from "motion/react";
 import { useEffect, useState } from "react";
 import { apiService } from "@/services/api";
+import { normalizeList } from "@/utils/normalizeList";
 import { toast } from "sonner";
 
 export function Home() {
@@ -15,9 +16,11 @@ export function Home() {
       try {
         const response = await apiService.getProducts({ limit: 4 });
         if (response.status === "success") {
-          setFeaturedProducts(response.data);
+          setFeaturedProducts(normalizeList(response.data) ?? []);
         }
-      } catch (error) {
+      } catch (error: unknown) {
+        toast.error(error instanceof Error ? error.message : "Failed to load featured products");
+        setFeaturedProducts([]);
         console.error("Failed to fetch products:", error);
       } finally {
         setLoading(false);
@@ -241,7 +244,7 @@ export function Home() {
             </button>
           </form>
           <p className="mt-6 text-[10px] text-gray-500 font-bold uppercase tracking-widest">
-            We value your privacy. Unsubscribe anytime.
+            We value your privacy. Unsubscribe anytime. (demo)
           </p>
         </div>
       </section>

@@ -22,7 +22,19 @@ import { registerAdminRoutes } from "./routes/admin";
  */
 export async function createApp(): Promise<Express> {
   const app = express();
-  app.use(express.json());
+  app.use(express.json({ limit: "500kb" }));
+
+  // Malformed JSON / oversized body -> uniform 400 envelope (never HTML).
+  // Must be registered before routes so body-parse failures are JSON.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  app.use((err: unknown, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const e = err as { type?: string; status?: number } | null;
+    if (err instanceof SyntaxError || (e && typeof e.type === "string" && e.type.startsWith("entity."))) {
+      res.status(400).json({ status: "error", message: "Invalid JSON" });
+      return;
+    }
+    next(err as never);
+  });
 
   registerPublicRoutes(app);
   registerAuthRoutes(app);

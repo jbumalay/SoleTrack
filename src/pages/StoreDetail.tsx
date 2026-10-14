@@ -1,22 +1,46 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useParams, Link } from "react-router";
 import { apiService } from "../services/api";
 import { ProductCard } from "../components/ProductCard";
 import { Store, MapPin, Mail, Phone, ArrowLeft, Package } from "lucide-react";
+import { normalizeList } from "@/utils/normalizeList";
+import { toast } from "sonner";
 
 export function StoreDetail() {
   const { id } = useParams();
   const [store, setStore] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (id) {
-      apiService.getStore(Number(id)).then((res) => {
-        if (res.status === "success") setStore(res.data);
-        setLoading(false);
-      }).catch(() => setLoading(false));
+  const fetchStore = useCallback(async () => {
+    const numericId = id ? Number(id) : NaN;
+    if (!id || !Number.isFinite(numericId)) {
+      setError("Invalid store identifier.");
+      setStore(null);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await apiService.getStore(numericId);
+      if (res.status === "success") {
+        setStore(res.data);
+      } else {
+        setError(res.message || "Store not found.");
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to load store.";
+      setError(message);
+      toast.error(message);
+    } finally {
+      setLoading(false);
     }
   }, [id]);
+
+  useEffect(() => {
+    fetchStore();
+  }, [fetchStore]);
 
   if (loading) {
     return (
@@ -26,17 +50,23 @@ export function StoreDetail() {
     );
   }
 
-  if (!store) {
+  if (error || !store) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
+      <div className="min-h-screen flex items-center justify-center p-6">
+        <div className="text-center max-w-md">
           <Store className="w-16 h-16 text-gray-200 mx-auto mb-4" />
-          <p className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4">Store not found</p>
-          <Link to="/stores" className="text-primary text-xs font-black uppercase tracking-widest hover:underline">Browse Stores</Link>
+          <p className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-2">Store not found</p>
+          {error && <p className="text-xs text-gray-400 mb-4">{error}</p>}
+          <div className="flex gap-3 justify-center">
+            <button onClick={fetchStore} className="text-primary text-xs font-black uppercase tracking-widest border border-primary/20 rounded-xl px-6 py-3 hover:bg-primary/5">Retry</button>
+            <Link to="/stores" className="text-primary text-xs font-black uppercase tracking-widest hover:underline px-6 py-3">Browse Stores</Link>
+          </div>
         </div>
       </div>
     );
   }
+
+  const storeProducts = normalizeList(store.products ?? []);
 
   return (
     <div className="min-h-screen bg-gray-50/50">
@@ -92,7 +122,7 @@ export function StoreDetail() {
                   </span>
                 )}
                 <span className="flex items-center gap-1.5 bg-gray-50 px-3 py-1.5 rounded-lg">
-                  <Package className="w-3 h-3 text-primary" /> {store.products?.length || 0} Products
+                  <Package className="w-3 h-3 text-primary" /> {storeProducts.length} Products
                 </span>
               </div>
             </div>
@@ -104,15 +134,15 @@ export function StoreDetail() {
           <h2 className="text-2xl font-black italic tracking-tighter mb-8">
             <span className="text-primary">Collection</span> by {store.brand_name}
           </h2>
-          {(!store.products || store.products.length === 0) ? (
+          {(storeProducts.length === 0) ? (
             <div className="text-center py-16 bg-white rounded-3xl border border-gray-50">
               <Package className="w-16 h-16 text-gray-200 mx-auto mb-4" />
               <p className="text-sm font-bold text-gray-400 uppercase tracking-widest">No products yet</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-              {store.products.map((product: any) => (
-                <ProductCard key={product.product_id} product={product} />
+              {storeProducts.map((product: any, idx: number) => (
+                <ProductCard key={product.product_id ?? product.id ?? idx} product={product} />
               ))}
             </div>
           )}

@@ -5,6 +5,7 @@ import { motion } from "motion/react";
 import { Package, TrendingUp, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { CancelModal } from "@/components/CancelModal";
+import { normalizeList } from "@/utils/normalizeList";
 
 export function CustomerDashboard() {
   const [orders, setOrders] = useState<any[]>([]);
@@ -16,9 +17,11 @@ export function CustomerDashboard() {
       try {
         const response = await apiService.getMyOrders();
         if (response.status === "success") {
-          setOrders(response.data);
+          setOrders(normalizeList(response.data) ?? []);
         }
-      } catch (error) {
+      } catch (error: unknown) {
+        toast.error(error instanceof Error ? error.message : "Failed to load orders");
+        setOrders([]);
         console.error("Failed to fetch orders:", error);
       } finally {
         setLoading(false);

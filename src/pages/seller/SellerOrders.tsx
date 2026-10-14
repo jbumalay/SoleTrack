@@ -17,6 +17,7 @@ import {
   ArrowRight
 } from "lucide-react";
 import { toast } from "sonner";
+import { normalizeList } from "@/utils/normalizeList";
 
 export default function SellerOrders() {
   const [orders, setOrders] = useState<any[]>([]);
@@ -31,12 +32,14 @@ export default function SellerOrders() {
   async function fetchOrders() {
     setLoading(true);
     try {
-      const response = await apiService.getSellerOrders();
+      const response = await apiService.getSellerOrders({ page: 1, limit: 100 });
       if (response.status === "success") {
-        setOrders(response.data);
+        setOrders(normalizeList(response.data) ?? []);
       }
-    } catch (error) {
-      console.error("Orders error:", error);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to load orders");
+      setOrders([]);
+      console.error("Orders error:", err);
     } finally {
       setLoading(false);
     }
@@ -138,7 +141,7 @@ export default function SellerOrders() {
                     </div>
                   </td>
                   <td className="px-10 py-8">
-                    <span className="text-sm font-black italic">₱{Number(order.total_amount).toLocaleString()}</span>
+                    <span className="text-sm font-black italic">₱{Number(order.total_amount ?? 0).toLocaleString()}</span>
                   </td>
                   <td className="px-10 py-8 text-[10px] font-black text-gray-400 uppercase tracking-widest">
                     {new Date(order.order_date).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}
@@ -169,7 +172,7 @@ export default function SellerOrders() {
               initial={{ opacity: 0, x: 100 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 100 }}
-              className="bg-white rounded-[4rem] w-full max-w-4xl max-h-[90vh] overflow-hidden shadow-2xl flex flex-col"
+              className="print-manifest bg-white rounded-[4rem] w-full max-w-4xl max-h-[90vh] overflow-hidden shadow-2xl flex flex-col"
             >
               <div className="p-12 border-b border-gray-50 flex justify-between items-center">
                 <div>
@@ -268,7 +271,7 @@ export default function SellerOrders() {
               </div>
 
               <div className="p-12 border-t border-gray-50 bg-gray-50/50 flex justify-between items-center">
-                 <button onClick={() => window.print()} className="flex items-center gap-3 px-8 py-5 border border-gray-200 rounded-2xl text-[10px] font-black uppercase tracking-widest text-gray-400 hover:text-gray-900 transition-colors">
+                 <button onClick={() => window.print()} data-print="order-manifest" className="flex items-center gap-3 px-8 py-5 border border-gray-200 rounded-2xl text-[10px] font-black uppercase tracking-widest text-gray-400 hover:text-gray-900 transition-colors">
                     <ExternalLink size={16} /> Print Manifesto
                  </button>
                  <div className="flex gap-4">

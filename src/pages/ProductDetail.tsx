@@ -8,6 +8,22 @@ import { LOW_STOCK_THRESHOLD } from "@/constants";
 import type { ProductInventory } from "@/types";
 import { toast } from "sonner";
 
+function readWishlist(): number[] {
+  try {
+    const raw = localStorage.getItem("soletrack_wishlist") || "[]";
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.map(Number).filter((n) => Number.isFinite(n)) : [];
+  } catch {
+    return [];
+  }
+}
+
+function formatReviewDate(value: unknown): string {
+  if (!value) return "Unknown date";
+  const d = new Date(value as string);
+  return Number.isNaN(d.getTime()) ? "Unknown date" : d.toLocaleDateString();
+}
+
 export function ProductDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -15,31 +31,39 @@ export function ProductDetail() {
   const isShopRole = isAdmin || isSeller;
   const [product, setProduct] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [showSizeGuide, setShowSizeGuide] = useState(false);
 
   const [selectedSize, setSelectedSize] = useState<number | null>(null);
   const [quantity, setQuantity] = useState(1);
   const [isAdding, setIsAdding] = useState(false);
   const [isWishlisted, setIsWishlisted] = useState(false);
 
+  const numericId = id ? Number(id) : NaN;
+
   useEffect(() => {
-    const wishlist = JSON.parse(localStorage.getItem("soletrack_wishlist") || "[]");
-    if (id) setIsWishlisted(wishlist.includes(Number(id)));
+    const wishlist = readWishlist();
+    if (id && Number.isFinite(Number(id))) setIsWishlisted(wishlist.includes(Number(id)));
   }, [id]);
 
   const toggleWishlist = useCallback(() => {
-    if (!id) return;
-    const wishlist: number[] = JSON.parse(localStorage.getItem("soletrack_wishlist") || "[]");
+    if (!id || !Number.isFinite(Number(id))) return;
+    const wishlist = readWishlist();
     const pid = Number(id);
-    if (wishlist.includes(pid)) {
-      const updated = wishlist.filter((x) => x !== pid);
-      localStorage.setItem("soletrack_wishlist", JSON.stringify(updated));
-      setIsWishlisted(false);
-      toast.success("Removed from wishlist");
-    } else {
-      wishlist.push(pid);
-      localStorage.setItem("soletrack_wishlist", JSON.stringify(wishlist));
-      setIsWishlisted(true);
-      toast.success("Added to wishlist");
+    try {
+      if (wishlist.includes(pid)) {
+        const updated = wishlist.filter((x) => x !== pid);
+        localStorage.setItem("soletrack_wishlist", JSON.stringify(updated));
+        setIsWishlisted(false);
+        toast.success("Removed from wishlist");
+      } else {
+        wishlist.push(pid);
+        localStorage.setItem("soletrack_wishlist", JSON.stringify(wishlist));
+        setIsWishlisted(true);
+        toast.success("Added to wishlist");
+      }
+    } catch {
+      toast.error("Could not update wishlist");
     }
   }, [id]);
 
@@ -47,10 +71,14 @@ export function ProductDetail() {
     const url = window.location.href;
     const title = product?.product_name || "SoleTrack";
     if (navigator.share) {
-      try { await navigator.share({ title, url }); } catch {}
+      try { await navigator.share({ title, url }); } catch { /* dismissed */ }
     } else {
-      await navigator.clipboard.writeText(url);
-      toast.success("Link copied to clipboard");
+      try {
+        await navigator.clipboard.writeText(url);
+        toast.success("Link copied to clipboard");
+      } catch {
+        toast.error("Could not copy link");
+      }
     }
   }, [product]);
   const [activeTab, setActiveTab] = useState("description");
@@ -60,38 +88,52 @@ export function ProductDetail() {
   const [reviewComment, setReviewComment] = useState("");
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
 
-  useEffect(() => {
-    async function fetchProduct() {
-      setLoading(true);
-      try {
-        const response = await apiService.getProduct(Number(id));
-        if (response.status === "success") {
-          setProduct(response.data);
-        }
-      } catch (error) {
-        console.error("Failed to fetch product:", error);
-      } finally {
-        setLoading(false);
-      }
+  const fetchProduct = useCallback(async () => {
+    if (!id || !Number.isFinite(Number(id))) {
+      setError("Invalid product identifier.");
+      setLoading(false);
+      return;
     }
-    if (id) fetchProduct();
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await apiService.getProduct(Number(id));
+      if (response.status === "success") {
+        setProduct(response.data);
+      } else {
+        setError(response.message || "Product not found.");
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to fetch product.");
+    } finally {
+      setLoading(false);
+    }
   }, [id]);
+
+  useEffect(() => {
+    fetchProduct();
+  }, [fetchProduct]);
 
   const handleAddToCart = async () => {
     if (!selectedSize) {
       toast.error("Please select a size to continue your heritage journey.");
       return;
     }
+    const productId = product?.product_id ?? product?.id;
+    if (productId === undefined || productId === null || !Number.isFinite(Number(productId))) {
+      toast.error("This product cannot be added to cart right now.");
+      return;
+    }
 
     setIsAdding(true);
     try {
-      const response = await apiService.addToCart(product.product_id, quantity, selectedSize);
+      const response = await apiService.addToCart(Number(productId), quantity, selectedSize);
       if (response.status === "success") {
         await refreshCart();
         navigate("/cart");
       }
-    } catch (error: any) {
-      toast.error(error.message || "Failed to add to cart");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to add to cart");
     } finally {
       setIsAdding(false);
     }
@@ -103,20 +145,25 @@ export function ProductDetail() {
       toast.error("Please login to submit a review");
       return;
     }
+    const productId = product?.product_id ?? product?.id;
+    if (productId === undefined || productId === null || !Number.isFinite(Number(productId))) {
+      toast.error("Cannot review this product right now.");
+      return;
+    }
     setIsSubmittingReview(true);
     try {
       await apiService.createReview({
-        product_id: product.product_id,
+        product_id: Number(productId),
         rating: reviewRating,
         comment: reviewComment
       });
       toast.success("Review submitted! Thank you for your feedback.");
       setReviewComment("");
       // Refresh product to show new review
-      const response = await apiService.getProduct(product.product_id);
+      const response = await apiService.getProduct(Number(productId));
       if (response.status === "success") setProduct(response.data);
-    } catch (error: any) {
-      toast.error(error.message || "Failed to submit review");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to submit review");
     } finally {
       setIsSubmittingReview(false);
     }
@@ -127,30 +174,49 @@ export function ProductDetail() {
       <div className="w-10 h-10 border-4 border-gray-100 border-t-primary rounded-full animate-spin" />
     </div>
   );
-  if (!product) return null;
+  if (error || !product) return (
+    <div className="min-h-screen flex items-center justify-center p-6">
+      <div className="text-center max-w-md bg-gray-50 p-12 rounded-[3rem] border border-gray-100">
+        <p className="text-[10px] font-black uppercase tracking-widest text-red-500 mb-4">Product unavailable</p>
+        <h1 className="text-3xl font-black italic tracking-tight text-gray-900 mb-4">Trail Lost.</h1>
+        <p className="text-sm text-gray-500 font-medium mb-8">{error || (!Number.isFinite(numericId) ? "Invalid product identifier." : "This product could not be found.")}</p>
+        <div className="flex gap-3 justify-center">
+          <button onClick={fetchProduct} className="px-8 py-4 bg-gray-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-primary transition-all">Retry</button>
+          <Link to="/products" className="px-8 py-4 bg-white border border-gray-200 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-gray-50 transition-all">Browse Collection</Link>
+        </div>
+      </div>
+    </div>
+  );
 
   const productStock = product.total_stock !== undefined ? Number(product.total_stock) : (product.stock_quantity !== undefined ? Number(product.stock_quantity) : 0);
-  const productPrice = Number(product.base_price || product.price);
-  const productImage = product.image_url || product.image;
+  const rawPrice = Number(product.base_price ?? product.price);
+  const productPriceLabel = Number.isFinite(rawPrice) ? `₱${rawPrice.toLocaleString()}` : "₱--";
+  const productImage = product.image_url || product.image || "/placeholder.png";
+  const hasImage = Boolean(product.image_url || product.image);
   const productCategory = product.category_name || product.category;
   const productRating = product.average_rating ? Number(product.average_rating) : 0;
-  const productRatingDisplay = productRating > 0 ? productRating.toFixed(1) : "No ratings";
+  const productRatingDisplay = Number.isFinite(productRating) && productRating > 0 ? productRating.toFixed(1) : "No ratings";
   const productReviews = Array.isArray(product.reviews) ? product.reviews : [];
   const productSizes: ProductInventory[] = Array.isArray(product.inventory) ? product.inventory : [];
   const selectedInventory = productSizes.find(i => i.size_id === selectedSize);
   const availableStock = selectedInventory ? Number(selectedInventory.stock_quantity) : Number(product.total_stock || 0);
+  void numericId;
 
-  const stockStatus = (availableStock <= 0) 
+  const stockStatus = (availableStock <= 0)
     ? { label: "Out of Stock", color: "text-red-600", bgColor: "bg-red-50", borderColor: "border-red-100" }
-    : (availableStock < LOW_STOCK_THRESHOLD) 
+    : (availableStock < LOW_STOCK_THRESHOLD)
     ? { label: "Low Stock", color: "text-orange-600", bgColor: "bg-orange-50", borderColor: "border-orange-100" }
     : { label: "In Stock", color: "text-green-600", bgColor: "bg-green-50", borderColor: "border-green-100" };
+
+  // Single-image catalog: only show gallery affordances when more than one image exists.
+  const galleryImages = hasImage ? [productImage] : [];
+  const showCarouselDots = galleryImages.length > 1;
 
   return (
     <div className="min-h-screen bg-white">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <div className="flex items-center justify-between mb-12">
-            <button 
+            <button
               onClick={() => navigate(-1)}
               className="flex items-center gap-3 text-xs font-black uppercase tracking-widest text-gray-400 hover:text-gray-900 transition-colors group"
             >
@@ -170,34 +236,43 @@ export function ProductDetail() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 xl:gap-24">
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
             className="space-y-8"
           >
             <div className="aspect-square rounded-[3rem] overflow-hidden bg-gray-50 border border-gray-100 shadow-2xl relative group">
-              <img 
-                src={productImage} 
-                alt={product.product_name}
-                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
-              />
-              <div className="absolute bottom-10 left-1/2 -translate-x-1/2 flex gap-3">
-                 {[...Array(3)].map((_, i) => (
-                   <div key={i} className={`w-2.5 h-2.5 rounded-full ${i === 0 ? 'bg-primary' : 'bg-white/50 backdrop-blur-md'}`} />
+              {hasImage ? (
+                <img
+                  src={productImage}
+                  alt={product.product_name}
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                  onError={(e) => { (e.target as HTMLImageElement).src = "/placeholder.png"; }}
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-gray-300 text-xs font-bold uppercase tracking-widest">No image available</div>
+              )}
+              {showCarouselDots && (
+                <div className="absolute bottom-10 left-1/2 -translate-x-1/2 flex gap-3">
+                  {galleryImages.map((_, i) => (
+                    <div key={i} className={`w-2.5 h-2.5 rounded-full ${i === 0 ? 'bg-primary' : 'bg-white/50 backdrop-blur-md'}`} />
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {showCarouselDots && (
+              <div className="grid grid-cols-4 gap-4">
+                 {galleryImages.slice(0, 4).map((src, i) => (
+                   <div key={i} className="aspect-square rounded-2xl overflow-hidden border-2 border-gray-100 hover:border-primary transition-all cursor-pointer">
+                      <img src={src} alt="" className="w-full h-full object-cover opacity-60 hover:opacity-100 transition-opacity" />
+                   </div>
                  ))}
               </div>
-            </div>
-            
-            <div className="grid grid-cols-4 gap-4">
-               {[...Array(4)].map((_, i) => (
-                 <div key={i} className="aspect-square rounded-2xl overflow-hidden border-2 border-gray-100 hover:border-primary transition-all cursor-pointer">
-                    <img src={productImage} className="w-full h-full object-cover opacity-60 hover:opacity-100 transition-opacity" />
-                 </div>
-               ))}
-            </div>
+            )}
           </motion.div>
 
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             className="flex flex-col"
@@ -218,14 +293,14 @@ export function ProductDetail() {
                   </div>
               </div>
               <h1 className="text-5xl font-black text-gray-900 tracking-tight leading-[1.1] mb-6 italic">{product.product_name}</h1>
-              
+
               <div className="flex items-center gap-6 mb-8 pb-8 border-b border-gray-100">
                 {productReviews.length > 0 ? (
                   <>
                     <div className="flex items-center gap-2 bg-gray-50 px-4 py-2 rounded-xl">
                       <div className="flex">
                         {[...Array(5)].map((_, i) => (
-                          <Star 
+                          <Star
                             key={i}
                             className={`w-4 h-4 ${i < Math.floor(productRating) ? 'fill-yellow-400 text-yellow-400' : 'text-gray-200'}`}
                           />
@@ -246,7 +321,7 @@ export function ProductDetail() {
                 <div>
                   <div className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2">Heritage Price</div>
                   <div className="flex items-baseline gap-2">
-                    <span className="text-4xl font-black text-gray-900">₱{productPrice.toLocaleString()}</span>
+                    <span className="text-4xl font-black text-gray-900">{productPriceLabel}</span>
                   </div>
                 </div>
                 <div className="text-right">
@@ -277,19 +352,19 @@ export function ProductDetail() {
                 <div>
                   <div className="flex justify-between items-center mb-4">
                     <h3 className="text-[10px] font-black uppercase tracking-widest text-gray-400 font-sans">Select Size (US)</h3>
-                    <button className="text-[10px] font-black uppercase tracking-widest text-primary hover:underline underline-offset-4">Size Guide</button>
+                    <button type="button" onClick={() => setShowSizeGuide(true)} className="text-[10px] font-black uppercase tracking-widest text-primary hover:underline underline-offset-4">Size Guide</button>
                   </div>
                   <div className="grid grid-cols-4 sm:grid-cols-6 gap-3">
                     {productSizes.map(item => {
                       const isOutOfStock = Number(item.stock_quantity) <= 0;
                       return (
                         <button
-                          key={item.inventory_id}
+                          key={item.inventory_id ?? item.size_id}
                           disabled={isOutOfStock}
                           onClick={() => setSelectedSize(item.size_id)}
                           className={`py-4 rounded-xl border-2 transition-all font-black text-sm relative overflow-hidden ${
-                            selectedSize === item.size_id 
-                              ? 'border-primary bg-primary text-white shadow-xl shadow-primary/20' 
+                            selectedSize === item.size_id
+                              ? 'border-primary bg-primary text-white shadow-xl shadow-primary/20'
                               : isOutOfStock
                               ? 'border-gray-50 bg-gray-50 text-gray-300 cursor-not-allowed'
                               : 'border-gray-100 hover:border-gray-200 text-gray-900'
@@ -307,13 +382,13 @@ export function ProductDetail() {
             {/* Actions */}
             {!isShopRole && <div className="flex gap-4 sticky bottom-4 z-20 sm:static sm:z-auto mt-auto">
               <div className="flex items-center gap-1 bg-gray-100 p-1.5 rounded-2xl">
-                 <button 
+                 <button
                   onClick={() => setQuantity(Math.max(1, quantity - 1))}
                   className="w-10 h-10 rounded-xl bg-white border border-gray-200 font-black text-xl flex items-center justify-center hover:bg-gray-50 disabled:opacity-50"
                   disabled={availableStock === 0}
                  >-</button>
                  <span className="w-10 text-center font-black italic">{availableStock === 0 ? 0 : quantity}</span>
-                 <button 
+                 <button
                   onClick={() => setQuantity(Math.min(availableStock, quantity + 1))}
                   className="w-10 h-10 rounded-xl bg-white border border-gray-200 font-black text-xl flex items-center justify-center hover:bg-gray-50 disabled:opacity-50"
                   disabled={availableStock === 0 || quantity >= availableStock}
@@ -341,7 +416,7 @@ export function ProductDetail() {
             <div className="mt-16">
                <div className="flex gap-10 border-b border-gray-100 mb-8 overflow-x-auto whitespace-nowrap">
                   {["description", "reviews"].map(tab => (
-                    <button 
+                    <button
                       key={tab}
                       onClick={() => setActiveTab(tab)}
                       className={`pb-4 text-[10px] font-black uppercase tracking-[0.3em] transition-all relative ${
@@ -353,11 +428,11 @@ export function ProductDetail() {
                     </button>
                   ))}
                </div>
-               
+
                <div className="min-h-[160px]">
                  <AnimatePresence mode="wait">
                     {activeTab === "description" && (
-                      <motion.p 
+                      <motion.p
                         key="desc"
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
@@ -368,7 +443,7 @@ export function ProductDetail() {
                       </motion.p>
                     )}
                     {activeTab === "reviews" && (
-                      <motion.div 
+                      <motion.div
                         key="rev"
                         initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
                         className="space-y-12"
@@ -420,7 +495,7 @@ export function ProductDetail() {
                                          </div>
                                          <div>
                                             <div className="text-sm font-black text-gray-900 italic tracking-tight">{review.customer_name}</div>
-                                            <div className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">{new Date(review.created_at).toLocaleDateString()}</div>
+                                            <div className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">{formatReviewDate(review.created_at)}</div>
                                          </div>
                                       </div>
                                       <div className="flex items-center gap-1 bg-yellow-50 px-3 py-1 rounded-full">
@@ -445,6 +520,23 @@ export function ProductDetail() {
           </motion.div>
         </div>
       </div>
+
+      {/* Size Guide stub modal */}
+      <AnimatePresence>
+        {showSizeGuide && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-gray-900/40 backdrop-blur-sm" onClick={() => setShowSizeGuide(false)}>
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
+              onClick={(e) => e.stopPropagation()}
+              className="max-w-md w-full bg-white rounded-[2rem] p-8 shadow-2xl"
+            >
+              <h3 className="text-lg font-black italic mb-4">US Size Guide</h3>
+              <p className="text-sm text-gray-500 font-medium leading-relaxed mb-6">Sizes follow standard US mens sizing. If you are between sizes, we recommend sizing up for handcrafted fits.</p>
+              <button onClick={() => setShowSizeGuide(false)} className="w-full bg-gray-900 text-white py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-primary transition-all">Close</button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

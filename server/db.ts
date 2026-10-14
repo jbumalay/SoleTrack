@@ -12,6 +12,10 @@ export function getPool(): mysql.Pool {
 export async function initDb(): Promise<void> {
   const { dbHost: host, dbPort: port, dbUser: user, dbPass: password, dbName } = config;
 
+  if (!/^[A-Za-z0-9_]+$/.test(dbName)) {
+    throw new Error("Invalid DB_NAME: only letters, numbers, and underscore are allowed");
+  }
+
   const bootstrap = await mysql.createConnection({ host, port, user, password });
   try {
     await bootstrap.query(
