@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
+import { NotificationBell } from "@/components/NotificationBell";
 
 export default function SellerLayout() {
   const { user, loading, logout } = useAuth();
@@ -122,6 +123,10 @@ export default function SellerLayout() {
         </nav>
 
         <div className="p-8 border-t border-gray-50">
+          <div className="flex items-center justify-between px-4 mb-6">
+            <span className="text-[9px] font-black uppercase tracking-widest text-gray-400">Alerts</span>
+            <NotificationBell />
+          </div>
           <div className="flex items-center gap-4 px-4 py-6 rounded-3xl bg-gray-50/50 border border-gray-100 mb-6">
             <div className="w-10 h-10 rounded-full bg-white border border-gray-200 flex items-center justify-center font-black italic text-primary shadow-sm">
               {user.username?.[0].toUpperCase()}

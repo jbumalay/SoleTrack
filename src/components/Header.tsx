@@ -3,6 +3,7 @@ import { ShoppingCart, Search, Menu, User, LogOut, X, Footprints, Heart } from "
 import React, { useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { readWishlist } from "../utils/wishlist";
+import { NotificationBell } from "./NotificationBell";
 
 interface HeaderProps {
   cartItemCount?: number;
@@ -72,6 +73,7 @@ export function Header({ cartItemCount = 0 }: HeaderProps) {
           </nav>
 
           <div className="hidden md:flex items-center gap-4">
+            <NotificationBell />
             <button
               onClick={() => setSearchOpen(!searchOpen)}
               className="p-2 hover:bg-muted rounded-lg transition-colors"
