@@ -704,6 +704,85 @@ export function registerSellerRoutes(app: Express): void {
     })
   );
 
+  app.put(
+    "/api/seller/orders/return",
+    isSeller,
+    asyncHandler(async (req, res) => {
+      const sellerId = (req as AuthedRequest).user!.user_id;
+      const { order_id } = req.body ?? {};
+      const orderId = parseId(order_id);
+      if (orderId === null) {
+        res.status(400).json({ status: "error", message: "Invalid ID" });
+        return;
+      }
+
+      const pool = getPool();
+      const conn = await pool.getConnection();
+      try {
+        await conn.beginTransaction();
+        const [orderRows] = (await conn.execute("SELECT status FROM orders WHERE order_id = ? FOR UPDATE", [
+          orderId,
+        ])) as unknown as [Array<{ status: string }>, unknown];
+        const order = orderRows[0];
+        if (!order) {
+          await conn.rollback();
+          res.status(404).json({ status: "error", message: "Order not found" });
+          return;
+        }
+        if (order.status !== "requested") {
+          await conn.rollback();
+          res.status(400).json({ status: "error", message: "Only requested returns can be approved" });
+          return;
+        }
+
+        const [hasItemsRows] = (await conn.execute(
+          `
+          SELECT 1 FROM order_items oi JOIN products p ON oi.product_id = p.product_id
+          WHERE oi.order_id = ? AND p.seller_id = ?
+        `,
+          [orderId, sellerId]
+        )) as unknown as [Row[], unknown];
+        if (hasItemsRows.length === 0) {
+          await conn.rollback();
+          res.status(403).json({ status: "error", message: "Access denied or order not found" });
+          return;
+        }
+
+        const [lines] = (await conn.execute(
+          "SELECT product_id, size_id, quantity FROM order_items WHERE order_id = ?",
+          [orderId]
+        )) as unknown as [Array<{ product_id: number; size_id: number | null; quantity: number }>, unknown];
+        for (const line of lines) {
+          await conn.execute(
+            `UPDATE inventory SET stock_quantity = stock_quantity + ?
+             WHERE product_id = ? AND (size_id = ? OR (size_id IS NULL AND ? IS NULL)) AND deleted_at IS NULL`,
+            [line.quantity, line.product_id, line.size_id, line.size_id]
+          );
+        }
+
+        await conn.execute(
+          `UPDATE orders SET status = 'approved', payment_status = 'refunded' WHERE order_id = ?`,
+          [orderId]
+        );
+        await conn.execute("INSERT INTO order_status_history (order_id, status) VALUES (?, 'approved')", [orderId]);
+        await conn.execute("INSERT INTO order_status_history (order_id, status) VALUES (?, 'refunded')", [orderId]);
+
+        await conn.commit();
+        res.json({ status: "success", message: "Return approved and refunded" });
+      } catch {
+        try {
+          await conn.rollback();
+        } catch {
+          // ignore
+        }
+        console.error("Seller return approval failed");
+        res.status(500).json({ status: "error", message: "Failed to approve return" });
+      } finally {
+        conn.release();
+      }
+    })
+  );
+
   app.get(
     "/api/seller/profile",
     isSeller,
