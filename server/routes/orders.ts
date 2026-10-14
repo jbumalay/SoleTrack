@@ -311,6 +311,18 @@ export function registerOrderRoutes(app: Express): void {
           return;
         }
 
+        const [lines] = (await conn.execute("SELECT product_id, size_id, quantity FROM order_items WHERE order_id = ?", [
+          orderId,
+        ])) as unknown as [Array<{ product_id: number; size_id: number | null; quantity: number }>, unknown];
+
+        for (const line of lines) {
+          await conn.execute(
+            `UPDATE inventory SET stock_quantity = stock_quantity + ?
+             WHERE product_id = ? AND (size_id = ? OR (size_id IS NULL AND ? IS NULL)) AND deleted_at IS NULL`,
+            [line.quantity, line.product_id, line.size_id, line.size_id]
+          );
+        }
+
         await conn.execute("UPDATE orders SET status = 'cancelled' WHERE order_id = ? AND user_id = ?", [
           orderId,
           user.user_id,
