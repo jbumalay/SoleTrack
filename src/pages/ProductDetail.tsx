@@ -7,6 +7,7 @@ import { useAuth } from "@/context/AuthContext";
 import { LOW_STOCK_THRESHOLD } from "@/constants";
 import { readWishlist, toggleWishlistId } from "@/utils/wishlist";
 import { addGuestCartLine } from "@/utils/guestCart";
+import { getReviewReply } from "@/utils/reviewReplies";
 import type { ProductInventory } from "@/types";
 import { toast } from "sonner";
 
@@ -504,6 +505,14 @@ export function ProductDetail() {
                                       </div>
                                    </div>
                                    <p className="text-sm text-gray-600 font-medium leading-relaxed italic">"{review.comment}"</p>
+                                   {getReviewReply(review.review_id) && (
+                                     <div className="mt-4 ml-14 p-5 rounded-2xl bg-primary/5 border border-primary/10">
+                                       <p className="text-[9px] font-black uppercase tracking-widest text-primary mb-2 flex items-center gap-2">
+                                         <Send className="w-3 h-3" /> {getReviewReply(review.review_id)?.seller_name || "Seller"} replied
+                                       </p>
+                                       <p className="text-sm text-gray-600 font-medium leading-relaxed italic">{getReviewReply(review.review_id)?.reply}</p>
+                                     </div>
+                                   )}
                                 </div>
                               ))
                            ) : (

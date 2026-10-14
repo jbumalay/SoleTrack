@@ -1,8 +1,10 @@
 import { useState, useEffect } from "react";
 import { apiService } from "@/services/api";
 import { motion, AnimatePresence } from "motion/react";
-import { Star, MessageSquare, Package, ChevronRight, Inbox } from "lucide-react";
+import { Star, MessageSquare, Package, ChevronRight, Inbox, Reply, Send, Pencil, Trash2 } from "lucide-react";
 import { normalizeList } from "@/utils/normalizeList";
+import { getReviewReply, saveReviewReply, deleteReviewReply, ReviewReply } from "@/utils/reviewReplies";
+import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 
 function StarDisplay({ rating }: { rating: number }) {
@@ -20,9 +22,13 @@ function StarDisplay({ rating }: { rating: number }) {
 }
 
 export default function SellerReviews() {
+  const { user } = useAuth();
   const [products, setProducts] = useState<any[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
   const [reviews, setReviews] = useState<any[]>([]);
+  const [replies, setReplies] = useState<Record<number, ReviewReply | null>>({});
+  const [replyDrafts, setReplyDrafts] = useState<Record<number, string>>({});
+  const [replyOpen, setReplyOpen] = useState<Record<number, boolean>>({});
   const [loadingProducts, setLoadingProducts] = useState(true);
   const [loadingReviews, setLoadingReviews] = useState(false);
 
@@ -51,13 +57,43 @@ export default function SellerReviews() {
     setLoadingReviews(true);
     try {
       const res = await apiService.getSellerProductReviews(product.product_id);
-      if (res.status === "success") setReviews(normalizeList(res.data) ?? []);
+      if (res.status === "success") {
+        const list = normalizeList(res.data) ?? [];
+        setReviews(list);
+        const map: Record<number, ReviewReply | null> = {};
+        list.forEach((r: any) => { map[r.review_id] = getReviewReply(r.review_id); });
+        setReplies(map);
+      }
     } catch {
       setReviews([]);
     } finally {
       setLoadingReviews(false);
     }
   }
+
+  const submitReply = (reviewId: number) => {
+    const draft = (replyDrafts[reviewId] ?? "").trim();
+    if (!draft) {
+      toast.error("Reply cannot be empty");
+      return;
+    }
+    if (draft.length > 1000) {
+      toast.error("Reply is too long");
+      return;
+    }
+    const entry = saveReviewReply(reviewId, draft, user?.brand_name || user?.username);
+    setReplies(prev => ({ ...prev, [reviewId]: entry }));
+    setReplyDrafts(prev => ({ ...prev, [reviewId]: "" }));
+    setReplyOpen(prev => ({ ...prev, [reviewId]: false }));
+    toast.success("Reply published");
+  };
+
+  const removeReply = (reviewId: number) => {
+    if (!window.confirm("Remove your reply to this review?")) return;
+    deleteReviewReply(reviewId);
+    setReplies(prev => ({ ...prev, [reviewId]: null }));
+    toast.success("Reply removed");
+  };
 
   const avgRating = selectedProduct ? Number(selectedProduct.average_rating) || 0 : 0;
   const totalReviews = selectedProduct ? Number(selectedProduct.total_reviews) || 0 : 0;
@@ -223,6 +259,68 @@ export default function SellerReviews() {
                           <p className="mt-5 text-sm text-gray-600 leading-relaxed italic pl-14">
                             "{review.comment}"
                           </p>
+                        )}
+
+                        {/* Seller reply */}
+                        {replies[review.review_id] ? (
+                          <div className="mt-5 ml-14 p-5 rounded-2xl bg-primary/5 border border-primary/10">
+                            <div className="flex items-center justify-between mb-2">
+                              <p className="text-[9px] font-black uppercase tracking-widest text-primary flex items-center gap-2">
+                                <Reply size={12} /> {replies[review.review_id]?.seller_name || "Seller"} replied
+                              </p>
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => {
+                                    setReplyDrafts(prev => ({ ...prev, [review.review_id]: replies[review.review_id]?.reply ?? "" }));
+                                    setReplyOpen(prev => ({ ...prev, [review.review_id]: true }));
+                                  }}
+                                  title="Edit reply"
+                                  className="p-2 text-gray-400 hover:text-primary rounded-lg transition-colors border border-gray-100 bg-white"
+                                >
+                                  <Pencil size={12} />
+                                </button>
+                                <button
+                                  onClick={() => removeReply(review.review_id)}
+                                  title="Remove reply"
+                                  className="p-2 text-gray-400 hover:text-red-500 rounded-lg transition-colors border border-gray-100 bg-white"
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              </div>
+                            </div>
+                            <p className="text-sm text-gray-600 leading-relaxed italic">{replies[review.review_id]?.reply}</p>
+                          </div>
+                        ) : replyOpen[review.review_id] ? (
+                          <div className="mt-5 ml-14 space-y-3">
+                            <textarea
+                              value={replyDrafts[review.review_id] ?? ""}
+                              onChange={(e) => setReplyDrafts(prev => ({ ...prev, [review.review_id]: e.target.value }))}
+                              rows={3}
+                              placeholder="Write your artisan reply..."
+                              className="w-full bg-gray-50 border border-gray-100 rounded-2xl p-5 text-sm font-medium focus:border-primary outline-none transition-all"
+                            />
+                            <div className="flex gap-3">
+                              <button
+                                onClick={() => submitReply(review.review_id)}
+                                className="px-8 py-3 bg-gray-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-primary transition-all flex items-center gap-2"
+                              >
+                                <Send size={12} /> Publish Reply
+                              </button>
+                              <button
+                                onClick={() => setReplyOpen(prev => ({ ...prev, [review.review_id]: false }))}
+                                className="px-8 py-3 bg-gray-50 text-gray-400 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-gray-100 transition-all"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setReplyOpen(prev => ({ ...prev, [review.review_id]: true }))}
+                            className="mt-5 ml-14 inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-primary hover:underline underline-offset-4"
+                          >
+                            <Reply size={12} /> Reply to this review
+                          </button>
                         )}
                       </div>
                     ))}
